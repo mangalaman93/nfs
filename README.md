@@ -6,5 +6,7 @@ Network Function Host
 
 # TODO
 * Command (from NFS to NFH) syntax
-* Send usage from NFH to NFS
+* Parse usage from NFH to NFS (go-collectd)
 * Simple Algorithm
+* Network functions
+* collectd plugins

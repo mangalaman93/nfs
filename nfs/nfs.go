@@ -5,14 +5,30 @@ import (
 	"flag"
 	"log"
 	"net"
+    "os"
 	"sync"
 )
 
-import "github.com/mangalaman93/nfs/common"
+import (
+    "github.com/mangalaman93/nfs/common"
+    "collectd.org/network"
+    "collectd.org/format"
+)
 
 // data structures
 var hosts = map[string]common.Host{}
 var hlock sync.Mutex
+
+func aggregator() {
+    // listen on 8097 for collectd data
+    cserver := &network.Server {
+        Addr:   net.JoinHostPort("localhost", "8097"),
+        Writer: format.NewPutval(os.Stdout),
+    }
+
+    // blocks
+    log.Fatal(cserver.ListenAndWrite())
+}
 
 func main() {
 	// setting up log flags
@@ -31,11 +47,14 @@ func main() {
 	// close the listener when the application closes
 	defer conn.Close()
 
+    // create aggregator thread
+    go aggregator()
+
 	// accept connections
 	for {
 		client, err := conn.Accept()
 		if err != nil {
-			log.Println("Error accepting: ", err.Error())
+			log.Println("[WARN] error accepting: ", err.Error())
 			continue
 		}
 

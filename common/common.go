@@ -9,10 +9,6 @@ import (
 const (
 	CREATE_CONTAINER = iota
 	STOP_CONTAINER
-	INC_CPU
-	DEC_CPU
-	INC_MEM
-	DEC_MEM
 )
 
 type Capacity struct {
