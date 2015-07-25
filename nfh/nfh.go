@@ -46,6 +46,9 @@ func main() {
 		log.Println(err.Error())
 	}
 
-	var cmd common.Cmd
-	dec.Decode(&cmd)
+	for {
+		var cmd common.Cmd
+		dec.Decode(&cmd)
+		log.Println("[INFO] received command: ", cmd)
+	}
 }
