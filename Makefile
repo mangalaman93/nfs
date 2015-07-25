@@ -9,10 +9,10 @@ common:
 	cd $(COMMON) && go install
 
 nfh:
-	cd $(NFH) && go install
+	cd $(NFH) && go get && go install
 
 nfs:
-	cd $(NFS) && go install
+	cd $(NFS) && go get && go install
 
 clean:
 	rm -rf $(BIN)/nfh $(BIN)/nfs
