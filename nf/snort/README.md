@@ -2,6 +2,12 @@
 ```
 docker build --rm -t mangalaman93/snort nf/snort/
 docker run --rm -it --name snort mangalaman93/snort sh run_snort.sh
+docker kill snort
+```
+
+# Testing with Snort
+```
+gorun nf/rtplot.go snort 1000
 ```
 
 # Reference
