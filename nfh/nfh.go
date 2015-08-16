@@ -23,7 +23,7 @@ func main() {
 	// connecting to NFS
 	conn, err := net.Dial("tcp", *host+":"+*port)
 	if err != nil {
-		log.Fatalln("[ERROR] unable to reach NFS,", err.Error())
+		log.Fatalln("[ERROR] unable to reach NFS, ", err.Error())
 	}
 	log.Println("[INFO] connected to NFS")
 
@@ -37,13 +37,13 @@ func main() {
 	// sending id
 	err = enc.Encode(*id)
 	if err != nil {
-		log.Println(err.Error())
+		log.Fatalln("[ERROR] error encoding id, ", err.Error())
 	}
 
 	// sending capacity
 	err = enc.Encode(common.Capacity{runtime.NumCPU(), common.TotalMem()})
 	if err != nil {
-		log.Println(err.Error())
+		log.Fatalln("[ERROR] error encoding capacity, ", err.Error())
 	}
 
 	for {

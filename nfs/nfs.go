@@ -5,14 +5,14 @@ import (
 	"flag"
 	"log"
 	"net"
-    "os"
+	"os"
 	"sync"
 )
 
 import (
-    "github.com/mangalaman93/nfs/common"
-    "collectd.org/network"
-    "collectd.org/format"
+	"collectd.org/format"
+	"collectd.org/network"
+	"github.com/mangalaman93/nfs/common"
 )
 
 // data structures
@@ -20,14 +20,14 @@ var hosts = map[string]common.Host{}
 var hlock sync.Mutex
 
 func aggregator() {
-    // listen on 8097 for collectd data
-    cserver := &network.Server {
-        Addr:   net.JoinHostPort("localhost", "8097"),
-        Writer: format.NewPutval(os.Stdout),
-    }
+	// listen on 8097 for collectd data
+	cserver := &network.Server{
+		Addr:   net.JoinHostPort("localhost", "8097"),
+		Writer: format.NewPutval(os.Stdout),
+	}
 
-    // blocks
-    log.Fatal(cserver.ListenAndWrite())
+	// blocks
+	log.Fatal(cserver.ListenAndWrite())
 }
 
 func main() {
@@ -47,8 +47,8 @@ func main() {
 	// close the listener when the application closes
 	defer conn.Close()
 
-    // create aggregator thread
-    go aggregator()
+	// create aggregator thread
+	go aggregator()
 
 	// accept connections
 	for {
@@ -69,7 +69,7 @@ func main() {
 		var id string
 		err = dec.Decode(&id)
 		if err != nil {
-			log.Println("[ERROR] unexpected data,", err.Error())
+			log.Println("[WARN] unexpected data, ", err.Error())
 			client.Close()
 			continue
 		}
@@ -78,7 +78,7 @@ func main() {
 		var capacity common.Capacity
 		err = dec.Decode(&capacity)
 		if err != nil {
-			log.Println("[ERROR] unexpected data,", err.Error())
+			log.Println("[WARN] unexpected data, ", err.Error())
 			client.Close()
 			continue
 		}
@@ -87,6 +87,6 @@ func main() {
 		hlock.Lock()
 		hosts[id] = common.Host{client.RemoteAddr(), enc, dec, capacity}
 		hlock.Unlock()
-		log.Printf("added client with id %s\n", id)
+		log.Printf("[INFO] added client with id %s\n", id)
 	}
 }
