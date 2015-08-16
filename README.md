@@ -10,3 +10,6 @@ Network Function Host
 * Simple Algorithm
 * Network functions
 * collectd plugins
+
+# References
+* [Run system commands in go](http://www.darrencoxall.com/golang/executing-commands-in-go/)
