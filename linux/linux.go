@@ -68,3 +68,18 @@ func GetCPUUsage() (int64, error) {
 
 	return 0, errors.New("unreachable code")
 }
+
+func GetMemUsage() (int64, error) {
+	out, err := Exec("free -b")
+	if err != nil {
+		return 0, err
+	}
+
+	i := strings.Index(out, "buffers/cache")
+	mem, err := strconv.ParseInt(strings.Fields(out[i:])[1], 10, 64)
+	if err != nil {
+		return 0, err
+	}
+
+	return mem, nil
+}

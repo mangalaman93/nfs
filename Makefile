@@ -23,7 +23,7 @@ nfh:
 nfs:
 	cd $(NFS) && go get && go install
 
-nf:
+rtplot:
 	cd $(NF) && go get && go install
 	mv $(BIN)/nf $(BIN)/rtplot
 

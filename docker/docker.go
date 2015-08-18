@@ -20,9 +20,8 @@ func ListContainers() ([]string, error) {
 	return strings.Fields(out), nil
 }
 
-// return total docker container cpu usage
-func GetCPUUsage(cont_id string) (int64, error) {
-	cpuacct_file := fmt.Sprintf("/sys/fs/cgroup/cpuacct/system.slice/docker-%s.scope/cpuacct.stat", cont_id)
+func GetCPUUsage(cont string) (int64, error) {
+	cpuacct_file := fmt.Sprintf("/sys/fs/cgroup/cpuacct/system.slice/docker-%s.scope/cpuacct.stat", cont)
 	data, err := ioutil.ReadFile(cpuacct_file)
 	if err != nil {
 		return 0, err
@@ -39,4 +38,19 @@ func GetCPUUsage(cont_id string) (int64, error) {
 	}
 
 	return (user_cpu + sys_cpu), nil
+}
+
+func GetMemUsage(cont string) (int64, error) {
+	cmd := fmt.Sprintf("head -2 /sys/fs/cgroup/memory/system.slice/docker-%s.scope/memory.stat", cont)
+	out, err := linux.Exec(cmd)
+	if err != nil {
+		return 0, err
+	}
+
+	mem, err := strconv.ParseInt(strings.Fields(out)[3], 10, 64)
+	if err != nil {
+		return 0, err
+	}
+
+	return mem, nil
 }
