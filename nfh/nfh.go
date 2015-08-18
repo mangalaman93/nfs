@@ -5,10 +5,14 @@ import (
 	"flag"
 	"log"
 	"net"
+	"os"
 	"runtime"
 )
 
-import "github.com/mangalaman93/nfs/common"
+import (
+	"github.com/mangalaman93/nfs/common"
+	"github.com/mangalaman93/nfs/linux"
+)
 
 func main() {
 	// setting up log flags
@@ -41,14 +45,27 @@ func main() {
 	}
 
 	// sending capacity
-	err = enc.Encode(common.Capacity{runtime.NumCPU(), common.TotalMem()})
+	mem, err := linux.TotalMem()
+	if err != nil {
+		log.Fatalln("[ERROR] Unable to find total memory, ", err.Error())
+	}
+	err = enc.Encode(common.Capacity{runtime.NumCPU(), mem})
 	if err != nil {
 		log.Fatalln("[ERROR] error encoding capacity, ", err.Error())
 	}
 
 	for {
 		var cmd common.Cmd
-		dec.Decode(&cmd)
+		err = dec.Decode(&cmd)
+		if err != nil {
+			if err.Error() == "EOF" {
+				log.Println("[INFO] connection closed from NFS!")
+				os.Exit(0)
+			} else {
+				log.Println("[WARN] error receiving data, ", err.Error())
+			}
+		}
+
 		log.Println("[INFO] received command: ", cmd)
 	}
 }

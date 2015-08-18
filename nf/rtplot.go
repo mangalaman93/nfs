@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -13,29 +12,10 @@ import (
 	"time"
 )
 
-// return total docker container cpu usage
-func get_cum_cpu_usage(cont_id string) int64 {
-	cpuacct_file := fmt.Sprintf("/sys/fs/cgroup/cpuacct/system.slice/docker-%s.scope/cpuacct.stat", cont_id)
-	data, err := ioutil.ReadFile(cpuacct_file)
-	if err != nil {
-		fmt.Println("[ERROR] error while reading cpuacct cgroup file!")
-		panic(err)
-	}
-
-	sdata := strings.Fields(string(data))
-	user_cpu, err := strconv.ParseInt(sdata[1], 10, 64)
-	if err != nil {
-		fmt.Println("[ERROR], error while converting cpu usage to integer!")
-		panic(err)
-	}
-	sys_cpu, err := strconv.ParseInt(sdata[3], 10, 64)
-	if err != nil {
-		fmt.Println("[ERROR], error while converting cpu usage to integer!")
-		panic(err)
-	}
-
-	return (user_cpu + sys_cpu)
-}
+import (
+	"github.com/mangalaman93/nfs/docker"
+	"github.com/mangalaman93/nfs/linux"
+)
 
 func main() {
 	// read arguments
@@ -52,10 +32,7 @@ func main() {
 	}
 
 	// get container id
-	cmd := fmt.Sprintf("docker inspect --format='{{.Id}}' %s", cont_name)
-	parts := strings.Fields(cmd)
-	command := exec.Command(parts[0], parts[1:]...)
-	out, err := command.CombinedOutput()
+	out, err := linux.Exec(fmt.Sprintf("docker inspect --format='{{.Id}}' %s", cont_name))
 	if err != nil {
 		fmt.Printf("[ERROR] unable to run cmd, output: (%s)\n", out)
 		panic(err)
@@ -63,9 +40,9 @@ func main() {
 	cont_id := strings.TrimSpace(string(out))
 
 	// check if feedgnuplot exists
-	command = exec.Command("which", "feedgnuplot")
-	out, err = command.CombinedOutput()
-	if err != nil || string(out) == "" {
+	command := exec.Command("which", "feedgnuplot")
+	empty, err := command.CombinedOutput()
+	if err != nil || string(empty) == "" {
 		panic("[ERROR] feedgnuplot doesn't exists!")
 	}
 
@@ -92,11 +69,20 @@ func main() {
 
 	// init readings
 	cur_time := time.Now().UnixNano()
-	cur_cpu := get_cum_cpu_usage(cont_id)
+	cur_cpu, err := docker.GetCPUUsage(cont_id)
+	if err != nil {
+		fmt.Println("[WARN] unable to get container CPU usage!")
+		cur_cpu = 0
+	}
 
 	// infinite loop for plotting data
 	for done {
-		new_cpu := get_cum_cpu_usage(cont_id)
+		new_cpu, err := docker.GetCPUUsage(cont_id)
+		if err != nil {
+			fmt.Println("[WARN] unable to get container CPU usage!")
+			new_cpu = 0
+		}
+
 		new_time := time.Now().UnixNano()
 		avg_cpu := float64(new_cpu-cur_cpu) / float64(new_time-cur_time) * 1000000000.0
 		cur_time = new_time
