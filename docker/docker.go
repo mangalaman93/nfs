@@ -54,3 +54,33 @@ func GetMemUsage(cont string) (int64, error) {
 
 	return mem, nil
 }
+
+func GetNetOutUsage(cont string) (int64, error) {
+	cmd := fmt.Sprintf("docker exec %s cat /sys/devices/virtual/net/eth0/statistics/tx_bytes", cont)
+	out, err := linux.Exec(cmd)
+	if err != nil {
+		return 0, err
+	}
+
+	net, err := strconv.ParseInt(strings.TrimSpace(out), 10, 64)
+	if err != nil {
+		return 0, err
+	}
+
+	return net, nil
+}
+
+func GetNetInUsage(cont string) (int64, error) {
+	cmd := fmt.Sprintf("docker exec %s cat /sys/devices/virtual/net/eth0/statistics/rx_bytes", cont)
+	out, err := linux.Exec(cmd)
+	if err != nil {
+		return 0, err
+	}
+
+	net, err := strconv.ParseInt(strings.TrimSpace(out), 10, 64)
+	if err != nil {
+		return 0, err
+	}
+
+	return net, nil
+}

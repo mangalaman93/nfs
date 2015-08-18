@@ -10,7 +10,6 @@ Network Function Host
 * Network functions
 * Snort load test
 * Parse usage from NFH to NFS (go-collectd)
-* collectd plugins
 
 # References
 * [Run system commands in go](http://www.darrencoxall.com/golang/executing-commands-in-go/)
