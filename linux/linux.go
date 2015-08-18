@@ -1,7 +1,10 @@
 package linux
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -31,4 +34,37 @@ func TotalMem() (int64, error) {
 	}
 
 	return val, nil
+}
+
+func GetCPUUsage() (int64, error) {
+	file, err := os.Open("/proc/stat")
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+
+	reader := bufio.NewReader(file)
+	scanner := bufio.NewScanner(reader)
+	for scanner.Scan() {
+		line := scanner.Text()
+		fields := strings.Fields(line[4:])
+
+		var total_cpu int64
+		for _, num := range fields {
+			cpu, err := strconv.ParseInt(num, 10, 64)
+			if err != nil {
+				return 0, err
+			}
+			total_cpu += cpu
+		}
+
+		idle_cpu, err := strconv.ParseInt(fields[3], 10, 64)
+		if err != nil {
+			return 0, err
+		}
+
+		return (total_cpu - idle_cpu), nil
+	}
+
+	return 0, errors.New("unreachable code")
 }

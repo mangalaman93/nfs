@@ -12,7 +12,7 @@ import (
 )
 
 func ListContainers() ([]string, error) {
-	out, err := linux.Exec("docker ps -q")
+	out, err := linux.Exec("docker ps -q --no-trunc")
 	if err != nil {
 		return nil, err
 	}
