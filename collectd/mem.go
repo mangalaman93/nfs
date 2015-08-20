@@ -2,15 +2,20 @@ package main
 
 import (
 	"log"
+	"os"
+	"strings"
 	"time"
 )
 
 import (
 	"collectd.org/api"
 	"collectd.org/exec"
+	"collectd.org/network"
 	"github.com/mangalaman93/nfs/docker"
 	"github.com/mangalaman93/nfs/linux"
 )
+
+var clients []*network.Client
 
 func dispatch(key string, now time.Time, value int64) {
 	vl := api.ValueList{
@@ -23,6 +28,12 @@ func dispatch(key string, now time.Time, value int64) {
 		Values:   []api.Value{api.Gauge(value)},
 	}
 	exec.Putval.Write(vl)
+
+	for _, client := range clients {
+		if err := client.Write(vl); err != nil {
+			log.Printf("[WARN] unable to write to client:%s, err:%s", client, err.Error())
+		}
+	}
 }
 
 func sendMemUsage(interval time.Duration) {
@@ -47,9 +58,32 @@ func sendMemUsage(interval time.Duration) {
 			dispatch(cont, now, mem)
 		}
 	}
+
+	for _, client := range clients {
+		client.Flush()
+	}
 }
 
 func main() {
+	if len(os.Args) < 2 {
+		log.Fatalf("[ERROR] %s requires more arguments!\n", os.Args[0])
+	}
+
+	addresses := strings.Fields(os.Args[1])
+	clients = make([]*network.Client, len(addresses))
+	index := 0
+	for _, address := range addresses {
+		client, err := network.Dial(address, network.ClientOptions{})
+		if err != nil {
+			log.Printf("[WARN] unable to connect to %s!\n", address)
+			continue
+		}
+
+		clients[index] = client
+		index += 1
+		defer client.Close()
+	}
+
 	e := exec.NewExecutor()
 	e.VoidCallback(sendMemUsage, exec.Interval())
 	e.Run()

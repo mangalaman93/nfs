@@ -23,9 +23,11 @@ sudo service collectd restart
 >> Make sure to setup `/etc/collectd/collectd.conf` before starting collectd
 
 # TODO
+* Influxdb setup, retrieve data securely
+* Optimize data sent by collectd over network
+* Network functions
 * Command (from NFS to NFH) syntax
 * Simple Algorithm
-* Network functions
 * Snort load test
 * Parse usage from NFH to NFS (go-collectd)
 
