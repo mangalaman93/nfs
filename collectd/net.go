@@ -18,9 +18,16 @@ import (
 	"github.com/mangalaman93/nfs/linux"
 )
 
+type ntuple struct {
+	time time.Time
+	net  int64
+}
+
+var rxdata = make(map[string]*ntuple)
+var txdata = make(map[string]*ntuple)
 var clients []*network.Client
 
-func dispatch(key string, now time.Time, value int64, prefix string) {
+func dispatch(key string, now time.Time, value float64, prefix string) {
 	vl := api.ValueList{
 		Identifier: api.Identifier{
 			Host:           exec.Hostname(),
@@ -57,18 +64,34 @@ func sendNetUsage(interval time.Duration) {
 					continue
 				}
 
-				rx, err := strconv.ParseInt(row[3], 10, 64)
+				net, err := strconv.ParseInt(row[3], 10, 64)
 				if err != nil {
 					log.Println("[WARN] error in converting to integer: ", err.Error())
 				} else {
-					dispatch(row[0], now, rx, "rx")
+					ntup, ok := rxdata[row[0]]
+					if ok {
+						avg := float64(net-ntup.net) * 1000000000 / float64(now.Sub(ntup.time))
+						ntup.time = now
+						ntup.net = net
+						dispatch(row[0], now, avg, "rx")
+					} else {
+						rxdata[row[0]] = &ntuple{time: now, net: net}
+					}
 				}
 
-				tx, err := strconv.ParseInt(row[7], 10, 64)
+				net, err = strconv.ParseInt(row[7], 10, 64)
 				if err != nil {
 					log.Println("[WARN] error in converting to integer: ", err.Error())
 				} else {
-					dispatch(row[0], now, tx, "tx")
+					ntup, ok := txdata[row[0]]
+					if ok {
+						avg := float64(net-ntup.net) * 1000000000 / float64(now.Sub(ntup.time))
+						ntup.time = now
+						ntup.net = net
+						dispatch(row[0], now, avg, "tx")
+					} else {
+						txdata[row[0]] = &ntuple{time: now, net: net}
+					}
 				}
 			}
 		}
@@ -84,7 +107,15 @@ func sendNetUsage(interval time.Duration) {
 		if err != nil {
 			log.Printf("[WARN] unable to get rx net usage for %s: %s\n", cont, err.Error())
 		} else {
-			dispatch(cont, now, net, "rx")
+			ntup, ok := rxdata[cont]
+			if ok {
+				avg := float64(net-ntup.net) * 1000000000 / float64(now.Sub(ntup.time))
+				ntup.time = now
+				ntup.net = net
+				dispatch(cont, now, avg, "rx")
+			} else {
+				rxdata[cont] = &ntuple{time: now, net: net}
+			}
 		}
 
 		net, err = docker.GetNetOutUsage(cont)
@@ -92,7 +123,15 @@ func sendNetUsage(interval time.Duration) {
 		if err != nil {
 			log.Printf("[WARN] unable to get tx net usage for %s: %s\n", cont, err.Error())
 		} else {
-			dispatch(cont, now, net, "tx")
+			ntup, ok := txdata[cont]
+			if ok {
+				avg := float64(net-ntup.net) * 1000000000 / float64(now.Sub(ntup.time))
+				ntup.time = now
+				ntup.net = net
+				dispatch(cont, now, avg, "tx")
+			} else {
+				txdata[cont] = &ntuple{time: now, net: net}
+			}
 		}
 	}
 
