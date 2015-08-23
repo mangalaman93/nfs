@@ -30,6 +30,9 @@ sudo service collectd restart
 * Simple Algorithm
 * Snort load test
 * Parse usage from NFH to NFS (go-collectd)
+* Collect sipp application level metrics
+* Write more sipp scenarios
+* More ntop NFs
 
 # References
 * [Run system commands in go](http://www.darrencoxall.com/golang/executing-commands-in-go/)
