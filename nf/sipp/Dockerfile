@@ -9,6 +9,10 @@ RUN wget http://iweb.dl.sourceforge.net/project/sipp/sipp/3.4/sipp-3.3.990.tar.g
 
 # copy scenarios
 COPY scens/* /scens/
+COPY run_sipp.sh /
+
+# command to run sipp
+CMD "/bin/sh" "/run_sipp.sh"
 
 # clean up
 RUN rm -r sipp-3.3.990.tar.gz sipp-3.3.990/
