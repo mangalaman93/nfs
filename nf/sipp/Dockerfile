@@ -9,6 +9,8 @@ RUN wget https://github.com/SIPp/sipp/archive/v3.4.1.tar.gz && tar -xf v3.4.1.ta
 
 # copy scenarios
 COPY scens/* /scens/
+
+# copy run script
 COPY run_sipp.sh /
 RUN chmod +x /run_sipp.sh
 
