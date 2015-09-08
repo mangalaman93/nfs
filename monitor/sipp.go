@@ -3,11 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -24,9 +27,11 @@ const (
 	UPDATE_INTERVAL = 4000
 	IMAGE_SIPP      = "mangalaman93/sipp"
 	PATH_VOL_SIPP   = "/data"
+	INFLUXDB_DB     = "cadvisor"
 )
 
 type Tails struct {
+	Cont     string
 	Dir      string
 	Rtt      *tail.Tail
 	Stat     *tail.Tail
@@ -34,6 +39,7 @@ type Tails struct {
 	waitchan chan bool
 }
 
+var machine_name string
 var clients []*influxdb.Client
 var sippvols = map[string]*Tails{}
 
@@ -48,23 +54,23 @@ func (t *Tails) TailVolume() {
 	for {
 		files, err = filepath.Glob(filepath.Join(t.Dir, "*.csv"))
 		if err != nil {
-			log.Println("[WARN] unable to find files to read from volume ", t.Dir)
+			log.Printf("[WARN] unable to find files to read from volume %s of container %s\n", t.Dir, t.Cont)
 			continue
 		}
 
 		if len(files) == 2 {
 			break
 		} else if len(files) > 2 {
-			log.Println("[WARN] more than 2 .csv files present for volume ", t.Dir)
+			log.Printf("[WARN] more than 2 .csv files present for volume %s of container %s\n", t.Dir, t.Cont)
 			return
 		} else {
-			log.Println("[WARN] less than 2 .csv files present for volume ", t.Dir)
+			log.Printf("[WARN] less than 2 .csv files present for volume %s of container %s\n", t.Dir, t.Cont)
 		}
 
 		timeout := time.After(UPDATE_INTERVAL * time.Millisecond)
 		select {
 		case <-t.stopchan:
-			log.Println("[INFO] no clean up required for volume ", t.Dir)
+			log.Printf("[INFO] no clean up required for volume %s of container %s\n", t.Dir, t.Cont)
 			t.waitchan <- true
 			return
 		case <-timeout:
@@ -74,16 +80,16 @@ func (t *Tails) TailVolume() {
 
 	t.Stat, err = tail.TailFile(files[0], tail.Config{Follow: true, ReOpen: false})
 	if err != nil {
-		log.Println("[WARN] unable to read stat file for volume ", t.Dir)
+		log.Printf("[WARN] unable to read stat file for volume %s of container %s\n", t.Dir, t.Cont)
 	} else {
-		go dispatchStats(t.Stat)
+		go dispatchStats(t.Stat, t.Cont)
 	}
 
 	t.Rtt, err = tail.TailFile(files[1], tail.Config{Follow: true, ReOpen: false})
 	if err != nil {
-		log.Println("[WARN] unable to read rtt file for volume ", t.Dir)
+		log.Printf("[WARN] unable to read rtt file for volume %s of container %s\n", t.Dir, t.Cont)
 	} else {
-		go dispatchRtts(t.Rtt)
+		go dispatchRtts(t.Rtt, t.Cont)
 	}
 
 	<-t.stopchan
@@ -101,19 +107,62 @@ func (t *Tails) cleanTail() {
 	t.Rtt.Cleanup()
 	t.Stat.Cleanup()
 
-	log.Println("[INFO] cleaned up for volume ", t.Dir)
+	log.Printf("[INFO] cleaned up for volume %s of container %s\n", t.Dir, t.Cont)
 	t.waitchan <- true
 }
 
-func dispatchRtts(t *tail.Tail) {
+func dispatchRtts(t *tail.Tail, container_name string) {
+	firstline := true
 	for line := range t.Lines {
-		fmt.Println(line.Text)
+		if firstline {
+			firstline = false
+			continue
+		}
+
+		fields := strings.Split(line.Text, ";")
+		if len(fields) < 3 {
+			log.Println("[WARN] unable to parse string: ", line.Text)
+			continue
+		}
+
+		value, err := strconv.ParseFloat(fields[1], 32)
+		if err != nil {
+			log.Println("[WARN] unable to parse value ", fields[1])
+			continue
+		}
+
+		point := influxdb.Point{
+			Measurement: "response_time",
+			Tags: map[string]string{
+				"container_name": container_name,
+				"machine":        machine_name,
+			},
+			Fields: map[string]interface{}{
+				"value": value,
+			},
+			Time:      time.Now(),
+			Precision: "s",
+		}
+
+		for _, c := range clients {
+			c.Write(influxdb.BatchPoints{
+				Points:          []influxdb.Point{point},
+				Database:        INFLUXDB_DB,
+				RetentionPolicy: "default",
+			})
+		}
 	}
 }
 
-func dispatchStats(t *tail.Tail) {
+func dispatchStats(t *tail.Tail, container_name string) {
+	firstline := true
 	for line := range t.Lines {
-		fmt.Println(line.Text)
+		if firstline {
+			firstline = false
+			continue
+		}
+
+		_ = strings.Split(line.Text, ";")
 	}
 }
 
@@ -149,7 +198,12 @@ func dockerListener(docker *dockerclient.Client, chand chan *dockerclient.APIEve
 				}
 
 				volume := cont.Volumes[PATH_VOL_SIPP]
-				tails := &Tails{Dir: volume, stopchan: make(chan bool, 1), waitchan: make(chan bool, 1)}
+				tails := &Tails{
+					Cont:     cont.Name[1:],
+					Dir:      volume,
+					stopchan: make(chan bool, 1),
+					waitchan: make(chan bool, 1),
+				}
 				sippvols[event.ID] = tails
 				go tails.TailVolume()
 				log.Printf("[INFO] add volume %s to map for container %s\n", volume, event.ID)
@@ -227,17 +281,42 @@ func main() {
 	log.SetFlags(log.LstdFlags)
 	log.Println("#################### BEGIN OF LOG ##########################")
 
+	// getting machine name
+	id, err := ioutil.ReadFile(filepath.Join("/sys/class/dmi/id", "product_uuid"))
+	if err != nil {
+		log.Fatalln("[ERROR] unable to get system id: ", err)
+	}
+	machine_name = strings.TrimSpace(string(id))
+	log.Println("[INFO] machine name: ", machine_name)
+
 	// influxdb clients
 	clients = make([]*influxdb.Client, len(args))
 	index := 0
 	for _, arg := range args {
-		host, err := url.Parse(fmt.Sprintf("http://%s", arg))
+		fields := strings.Split(arg, ":")
+		if len(fields) < 2 || len(fields) == 3 || len(fields) > 4 {
+			log.Printf("[WARN] unable to parse %s!\n", arg)
+			continue
+		}
+
+		host, err := url.Parse(fmt.Sprintf("http://%s:%s", fields[0], fields[1]))
 		if err != nil {
 			log.Printf("[WARN] unable to parse %s!\n", arg)
 			continue
 		}
 
-		client, err := influxdb.NewClient(influxdb.Config{URL: *host})
+		var conf influxdb.Config
+		if len(fields) == 4 {
+			conf = influxdb.Config{
+				URL:      *host,
+				Username: fields[2],
+				Password: fields[3],
+			}
+		} else {
+			conf = influxdb.Config{URL: *host}
+		}
+
+		client, err := influxdb.NewClient(conf)
 		if err != nil {
 			log.Printf("[WARN] unable to create influxdb client for %s!\n", arg)
 			continue
