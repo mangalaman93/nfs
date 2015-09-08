@@ -28,7 +28,23 @@ const (
 	IMAGE_SIPP      = "mangalaman93/sipp"
 	PATH_VOL_SIPP   = "/data"
 	INFLUXDB_DB     = "cadvisor"
+	FIELD_COUNT     = 87
 )
+
+var MEASUREMENTS = map[int]string{
+	6:  "call_rate",
+	8:  "incoming_call",
+	10: "outgoing_call",
+	14: "successful_calls",
+	16: "failed_calls",
+	21: "failed_max_udp_retrans",
+	39: "failed_outbound_congestion",
+	40: "failed_timeout_on_recv",
+	42: "failed_timeout_on_send",
+	48: "retransmissions",
+	56: "watchdog_major",
+	58: "watchdog_minor",
+}
 
 type Tails struct {
 	Cont     string
@@ -155,6 +171,9 @@ func dispatchRtts(t *tail.Tail, container_name string) {
 }
 
 func dispatchStats(t *tail.Tail, container_name string) {
+	length := len(MEASUREMENTS)
+	pts := make([]influxdb.Point, length)
+
 	firstline := true
 	for line := range t.Lines {
 		if firstline {
@@ -162,7 +181,43 @@ func dispatchStats(t *tail.Tail, container_name string) {
 			continue
 		}
 
-		_ = strings.Split(line.Text, ";")
+		fields := strings.Split(line.Text, ";")
+		if len(fields) < FIELD_COUNT {
+			log.Printf("[WARN] only %v fields in %s\n", len(fields), fields)
+			continue
+		}
+
+		count := 0
+		for index, measurement := range MEASUREMENTS {
+			value, err := strconv.ParseFloat(fields[index], 32)
+			if err != nil {
+				log.Println("[WARN] unable to parse value ", fields[index])
+				value = 0
+			}
+
+			pts[count] = influxdb.Point{
+				Measurement: measurement,
+				Tags: map[string]string{
+					"container_name": container_name,
+					"machine":        machine_name,
+				},
+				Fields: map[string]interface{}{
+					"value": value,
+				},
+				Time:      time.Now(),
+				Precision: "s",
+			}
+
+			count += 1
+		}
+
+		for _, c := range clients {
+			c.Write(influxdb.BatchPoints{
+				Points:          pts,
+				Database:        INFLUXDB_DB,
+				RetentionPolicy: "default",
+			})
+		}
 	}
 }
 
