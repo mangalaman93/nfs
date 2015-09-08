@@ -47,10 +47,10 @@ var MEASUREMENTS = map[int]string{
 }
 
 type Tails struct {
-	Cont     string
-	Dir      string
-	Rtt      *tail.Tail
-	Stat     *tail.Tail
+	vol      string
+	contname string
+	rtt      *tail.Tail
+	stat     *tail.Tail
 	stopchan chan bool
 	waitchan chan bool
 }
@@ -60,76 +60,12 @@ var clients []*influxdb.Client
 var sippvols = map[string]*Tails{}
 
 func (t *Tails) String() string {
-	return fmt.Sprintf("{Dir:%s, Rtt:%s, Stat:%s}", t.Dir, t.Rtt, t.Stat)
+	return fmt.Sprintf("{vol:%s, contname:%s, rtt:%s, stat:%s}", t.vol, t.contname, t.rtt, t.stat)
 }
 
-func (t *Tails) TailVolume() {
-	var files []string
-	var err error
-
-	for {
-		files, err = filepath.Glob(filepath.Join(t.Dir, "*.csv"))
-		if err != nil {
-			log.Printf("[WARN] unable to find files to read from volume %s of container %s\n", t.Dir, t.Cont)
-			continue
-		}
-
-		if len(files) == 2 {
-			break
-		} else if len(files) > 2 {
-			log.Printf("[WARN] more than 2 .csv files present for volume %s of container %s\n", t.Dir, t.Cont)
-			return
-		} else {
-			log.Printf("[WARN] less than 2 .csv files present for volume %s of container %s\n", t.Dir, t.Cont)
-		}
-
-		timeout := time.After(UPDATE_INTERVAL * time.Millisecond)
-		select {
-		case <-t.stopchan:
-			log.Printf("[INFO] no clean up required for volume %s of container %s\n", t.Dir, t.Cont)
-			t.waitchan <- true
-			return
-		case <-timeout:
-			continue
-		}
-	}
-
-	t.Stat, err = tail.TailFile(files[0], tail.Config{Follow: true, ReOpen: false})
-	if err != nil {
-		log.Printf("[WARN] unable to read stat file for volume %s of container %s\n", t.Dir, t.Cont)
-	} else {
-		go dispatchStats(t.Stat, t.Cont)
-	}
-
-	t.Rtt, err = tail.TailFile(files[1], tail.Config{Follow: true, ReOpen: false})
-	if err != nil {
-		log.Printf("[WARN] unable to read rtt file for volume %s of container %s\n", t.Dir, t.Cont)
-	} else {
-		go dispatchRtts(t.Rtt, t.Cont)
-	}
-
-	<-t.stopchan
-	t.cleanTail()
-}
-
-func (t *Tails) StopTail() {
-	t.stopchan <- true
-	<-t.waitchan
-}
-
-func (t *Tails) cleanTail() {
-	t.Rtt.Stop()
-	t.Stat.Stop()
-	t.Rtt.Cleanup()
-	t.Stat.Cleanup()
-
-	log.Printf("[INFO] cleaned up for volume %s of container %s\n", t.Dir, t.Cont)
-	t.waitchan <- true
-}
-
-func dispatchRtts(t *tail.Tail, container_name string) {
+func (t *Tails) dispatchRtts() {
 	firstline := true
-	for line := range t.Lines {
+	for line := range t.rtt.Lines {
 		if firstline {
 			firstline = false
 			continue
@@ -137,7 +73,7 @@ func dispatchRtts(t *tail.Tail, container_name string) {
 
 		fields := strings.Split(line.Text, ";")
 		if len(fields) < 3 {
-			log.Println("[WARN] unable to parse string: ", line.Text)
+			log.Println("[WARN] unable to parse string: ", line)
 			continue
 		}
 
@@ -150,7 +86,7 @@ func dispatchRtts(t *tail.Tail, container_name string) {
 		point := influxdb.Point{
 			Measurement: "response_time",
 			Tags: map[string]string{
-				"container_name": container_name,
+				"container_name": t.contname,
 				"machine":        machine_name,
 			},
 			Fields: map[string]interface{}{
@@ -170,12 +106,12 @@ func dispatchRtts(t *tail.Tail, container_name string) {
 	}
 }
 
-func dispatchStats(t *tail.Tail, container_name string) {
+func (t *Tails) dispatchStats() {
 	length := len(MEASUREMENTS)
 	pts := make([]influxdb.Point, length)
 
 	firstline := true
-	for line := range t.Lines {
+	for line := range t.stat.Lines {
 		if firstline {
 			firstline = false
 			continue
@@ -198,7 +134,7 @@ func dispatchStats(t *tail.Tail, container_name string) {
 			pts[count] = influxdb.Point{
 				Measurement: measurement,
 				Tags: map[string]string{
-					"container_name": container_name,
+					"container_name": t.contname,
 					"machine":        machine_name,
 				},
 				Fields: map[string]interface{}{
@@ -219,6 +155,70 @@ func dispatchStats(t *tail.Tail, container_name string) {
 			})
 		}
 	}
+}
+
+func (t *Tails) TailVolume() {
+	var files []string
+	var err error
+
+	for {
+		files, err = filepath.Glob(filepath.Join(t.vol, "*.csv"))
+		if err != nil {
+			log.Printf("[WARN] unable to find files to read from volume %s of container %s\n", t.vol, t.contname)
+			continue
+		}
+
+		if len(files) == 2 {
+			break
+		} else if len(files) > 2 {
+			log.Printf("[WARN] more than 2 .csv files present for volume %s of container %s\n", t.vol, t.contname)
+			return
+		} else {
+			log.Printf("[WARN] less than 2 .csv files present for volume %s of container %s\n", t.vol, t.contname)
+		}
+
+		timeout := time.After(UPDATE_INTERVAL * time.Millisecond)
+		select {
+		case <-t.stopchan:
+			log.Printf("[INFO] no clean up required for volume %s of container %s\n", t.vol, t.contname)
+			t.waitchan <- true
+			return
+		case <-timeout:
+			continue
+		}
+	}
+
+	t.stat, err = tail.TailFile(files[0], tail.Config{Follow: true, ReOpen: false})
+	if err != nil {
+		log.Printf("[WARN] unable to read stat file for volume %s of container %s\n", t.vol, t.contname)
+	} else {
+		go t.dispatchStats()
+	}
+
+	t.rtt, err = tail.TailFile(files[1], tail.Config{Follow: true, ReOpen: false})
+	if err != nil {
+		log.Printf("[WARN] unable to read rtt file for volume %s of container %s\n", t.vol, t.contname)
+	} else {
+		go t.dispatchRtts()
+	}
+
+	<-t.stopchan
+	t.cleanTail()
+}
+
+func (t *Tails) StopTail() {
+	t.stopchan <- true
+	<-t.waitchan
+}
+
+func (t *Tails) cleanTail() {
+	t.rtt.Stop()
+	t.stat.Stop()
+	t.rtt.Cleanup()
+	t.stat.Cleanup()
+
+	log.Printf("[INFO] cleaned up for volume %s of container %s\n", t.vol, t.contname)
+	t.waitchan <- true
 }
 
 func cleanup() {
@@ -254,8 +254,8 @@ func dockerListener(docker *dockerclient.Client, chand chan *dockerclient.APIEve
 
 				volume := cont.Volumes[PATH_VOL_SIPP]
 				tails := &Tails{
-					Cont:     cont.Name[1:],
-					Dir:      volume,
+					contname: cont.Name[1:],
+					vol:      volume,
 					stopchan: make(chan bool, 1),
 					waitchan: make(chan bool, 1),
 				}
@@ -268,7 +268,7 @@ func dockerListener(docker *dockerclient.Client, chand chan *dockerclient.APIEve
 			if tails, ok := sippvols[event.ID]; ok {
 				go tails.StopTail()
 				delete(sippvols, event.ID)
-				log.Printf("[INFO] delete volume %s from map for container %s\n", tails.Dir, event.ID)
+				log.Printf("[INFO] delete volume %s from map for container %s\n", tails.vol, event.ID)
 			}
 		}
 	}
