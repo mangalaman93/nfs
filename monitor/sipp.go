@@ -23,12 +23,14 @@ import (
 )
 
 const (
-	LOG_FILE        = "sipp.log"
-	UPDATE_INTERVAL = 4000
-	IMAGE_SIPP      = "mangalaman93/sipp"
-	PATH_VOL_SIPP   = "/data"
-	INFLUXDB_DB     = "cadvisor"
-	FIELD_COUNT     = 87
+	LOG_FILE            = "sipp.log"
+	UPDATE_INTERVAL     = 4000
+	IMAGE_SIPP          = "mangalaman93/sipp"
+	PATH_VOL_SIPP       = "/data"
+	INFLUXDB_DB         = "cadvisor"
+	STAT_FIELD_COUNT    = 87
+	NET_BUFFER_SIZE     = 1000
+	INFLUXDB_BATCH_SIZE = 200
 )
 
 var MEASUREMENTS = map[int]string{
@@ -63,7 +65,7 @@ func (t *Tails) String() string {
 	return fmt.Sprintf("{vol:%s, contname:%s, rtt:%s, stat:%s}", t.vol, t.contname, t.rtt, t.stat)
 }
 
-func (t *Tails) dispatchRtts() {
+func (t *Tails) dispatchRtts(influxchan chan *influxdb.Point) {
 	firstline := true
 	for line := range t.rtt.Lines {
 		if firstline {
@@ -83,7 +85,7 @@ func (t *Tails) dispatchRtts() {
 			continue
 		}
 
-		point := influxdb.Point{
+		influxchan <- &influxdb.Point{
 			Measurement: "response_time",
 			Tags: map[string]string{
 				"container_name": t.contname,
@@ -95,21 +97,10 @@ func (t *Tails) dispatchRtts() {
 			Time:      time.Now(),
 			Precision: "s",
 		}
-
-		for _, c := range clients {
-			c.Write(influxdb.BatchPoints{
-				Points:          []influxdb.Point{point},
-				Database:        INFLUXDB_DB,
-				RetentionPolicy: "default",
-			})
-		}
 	}
 }
 
-func (t *Tails) dispatchStats() {
-	length := len(MEASUREMENTS)
-	pts := make([]influxdb.Point, length)
-
+func (t *Tails) dispatchStats(influxchan chan *influxdb.Point) {
 	firstline := true
 	for line := range t.stat.Lines {
 		if firstline {
@@ -118,12 +109,11 @@ func (t *Tails) dispatchStats() {
 		}
 
 		fields := strings.Split(line.Text, ";")
-		if len(fields) < FIELD_COUNT {
+		if len(fields) < STAT_FIELD_COUNT {
 			log.Printf("[WARN] only %v fields in %s\n", len(fields), fields)
 			continue
 		}
 
-		count := 0
 		for index, measurement := range MEASUREMENTS {
 			value, err := strconv.ParseFloat(fields[index], 32)
 			if err != nil {
@@ -131,7 +121,7 @@ func (t *Tails) dispatchStats() {
 				value = 0
 			}
 
-			pts[count] = influxdb.Point{
+			influxchan <- &influxdb.Point{
 				Measurement: measurement,
 				Tags: map[string]string{
 					"container_name": t.contname,
@@ -143,21 +133,11 @@ func (t *Tails) dispatchStats() {
 				Time:      time.Now(),
 				Precision: "s",
 			}
-
-			count += 1
-		}
-
-		for _, c := range clients {
-			c.Write(influxdb.BatchPoints{
-				Points:          pts,
-				Database:        INFLUXDB_DB,
-				RetentionPolicy: "default",
-			})
 		}
 	}
 }
 
-func (t *Tails) TailVolume() {
+func (t *Tails) TailVolume(influxchan chan *influxdb.Point) {
 	var files []string
 	var err error
 
@@ -192,18 +172,23 @@ func (t *Tails) TailVolume() {
 	if err != nil {
 		log.Printf("[WARN] unable to read stat file for volume %s of container %s\n", t.vol, t.contname)
 	} else {
-		go t.dispatchStats()
+		go t.dispatchStats(influxchan)
 	}
 
 	t.rtt, err = tail.TailFile(files[1], tail.Config{Follow: true, ReOpen: false})
 	if err != nil {
 		log.Printf("[WARN] unable to read rtt file for volume %s of container %s\n", t.vol, t.contname)
 	} else {
-		go t.dispatchRtts()
+		go t.dispatchRtts(influxchan)
 	}
 
 	<-t.stopchan
-	t.cleanTail()
+	t.rtt.Stop()
+	t.stat.Stop()
+	t.rtt.Cleanup()
+	t.stat.Cleanup()
+	log.Printf("[INFO] cleaned up for volume %s of container %s\n", t.vol, t.contname)
+	t.waitchan <- true
 }
 
 func (t *Tails) StopTail() {
@@ -211,17 +196,7 @@ func (t *Tails) StopTail() {
 	<-t.waitchan
 }
 
-func (t *Tails) cleanTail() {
-	t.rtt.Stop()
-	t.stat.Stop()
-	t.rtt.Cleanup()
-	t.stat.Cleanup()
-
-	log.Printf("[INFO] cleaned up for volume %s of container %s\n", t.vol, t.contname)
-	t.waitchan <- true
-}
-
-func cleanup() {
+func cleanupTails() {
 	for _, tails := range sippvols {
 		tails.StopTail()
 	}
@@ -229,19 +204,63 @@ func cleanup() {
 	log.Println("[INFO] cleanup done, exiting!")
 }
 
-func dockerListener(docker *dockerclient.Client, chand chan *dockerclient.APIEvents) {
-	log.Println("[INFO] listening to docker container events")
+func sendBatch(pts []influxdb.Point) {
+	for _, c := range clients {
+		c.Write(influxdb.BatchPoints{
+			Points:          pts,
+			Database:        INFLUXDB_DB,
+			RetentionPolicy: "default",
+		})
+	}
+}
+
+func bgWrite(influxchan chan *influxdb.Point, done chan bool) {
+	count := 0
+	pts := make([]influxdb.Point, INFLUXDB_BATCH_SIZE)
 
 	for {
-		event := <-chand
+		point := <-influxchan
+		if point == nil {
+			sendBatch(pts[:count])
+			done <- true
+			break
+		} else {
+			pts[count] = *point
+			count += 1
+		}
+
+		// if buffer is full
+		if count == INFLUXDB_BATCH_SIZE {
+			sendBatch(pts)
+			count = 0
+		}
+	}
+}
+
+func dockerListener(docker *dockerclient.Client, dokchan chan *dockerclient.APIEvents, done chan bool) {
+	log.Println("[INFO] listening to docker container events")
+	defer func() { done <- true }()
+
+	influxchan := make(chan *influxdb.Point, NET_BUFFER_SIZE)
+	donechan := make(chan bool, 1)
+	go bgWrite(influxchan, donechan)
+	defer func() {
+		influxchan <- nil
+		<-donechan
+	}()
+
+	defer func() { cleanupTails() }()
+	for {
+		event := <-dokchan
 		log.Println("[INFO] event occurred: ", event)
 
 		switch event.Status {
 		case "EOF":
-			break
+			return
 
 		case "start":
 			if _, ok := sippvols[event.ID]; ok {
+				log.Println("[WARN] duplicate event for container ", event.ID)
 				continue
 			}
 
@@ -259,14 +278,15 @@ func dockerListener(docker *dockerclient.Client, chand chan *dockerclient.APIEve
 					stopchan: make(chan bool, 1),
 					waitchan: make(chan bool, 1),
 				}
+
 				sippvols[event.ID] = tails
-				go tails.TailVolume()
+				go tails.TailVolume(influxchan)
 				log.Printf("[INFO] add volume %s to map for container %s\n", volume, event.ID)
 			}
 
 		case "die", "kill", "stop":
 			if tails, ok := sippvols[event.ID]; ok {
-				go tails.StopTail()
+				tails.StopTail()
 				delete(sippvols, event.ID)
 				log.Printf("[INFO] delete volume %s from map for container %s\n", tails.vol, event.ID)
 			}
@@ -286,8 +306,6 @@ func parseArgs(daemonize *bool) {
 func main() {
 	var logfile *os.File
 	var err error
-	var args []string
-	daemonize := true
 
 	// check root
 	if os.Geteuid() != 0 {
@@ -295,14 +313,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	// parent
+	daemonize := true
 	if godaemon.Stage() == godaemon.StageParent {
-		// command line flags
 		parseArgs(&daemonize)
-		args = flag.Args()
 
 		if daemonize {
-			// log settings
 			logfile, err = os.OpenFile(LOG_FILE, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 			if err != nil {
 				fmt.Printf("[ERROR] error opening log file: %v", err)
@@ -317,11 +332,8 @@ func main() {
 		}
 	}
 
-	// daemonize
 	if daemonize {
-		_, _, err = godaemon.MakeDaemon(&godaemon.DaemonAttr{
-			Files: []**os.File{&logfile},
-		})
+		_, _, err = godaemon.MakeDaemon(&godaemon.DaemonAttr{Files: []**os.File{&logfile}})
 		if err != nil {
 			fmt.Printf("[ERROR] error daemonizing: %v", err)
 			os.Exit(1)
@@ -330,7 +342,6 @@ func main() {
 		defer logfile.Close()
 		log.SetOutput(logfile)
 		parseArgs(&daemonize)
-		args = flag.Args()
 	}
 
 	log.SetFlags(log.LstdFlags)
@@ -345,6 +356,7 @@ func main() {
 	log.Println("[INFO] machine name: ", machine_name)
 
 	// influxdb clients
+	args := flag.Args()
 	clients = make([]*influxdb.Client, len(args))
 	index := 0
 	for _, arg := range args {
@@ -386,30 +398,27 @@ func main() {
 		log.Fatalln("[ERROR] no client is parsable, exiting!")
 	}
 
-	// sigterm handler
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	log.Println("[INFO] adding signal handler for SIGTERM")
 
-	// start docker event monitoring
 	docker, err := dockerclient.NewClientFromEnv()
 	if err != nil {
 		log.Fatalln("[ERROR] unable to create docker client, exiting!")
 	}
 
-	chand := make(chan *dockerclient.APIEvents, 100)
-	err = docker.AddEventListener(chand)
+	dokchan := make(chan *dockerclient.APIEvents, 100)
+	waitchan := make(chan bool, 1)
+	err = docker.AddEventListener(dokchan)
 	if err != nil {
 		log.Fatalln("[ERROR] unable to add docker event listener, exiting!")
 	}
-	go dockerListener(docker, chand)
+	go dockerListener(docker, dokchan, waitchan)
 
 	// wait for stop signal and then cleanup
 	_ = <-sigs
 	log.Println("[INFO] beginning cleanup!")
-
-	// cleanup
-	docker.RemoveEventListener(chand)
-	chand <- dockerclient.EOFEvent
-	cleanup()
+	docker.RemoveEventListener(dokchan)
+	dokchan <- dockerclient.EOFEvent
+	<-waitchan
 }
