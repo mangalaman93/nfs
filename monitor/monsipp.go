@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/url"
 	"os"
@@ -362,7 +361,7 @@ func main() {
 	log.Println("#################### BEGIN OF LOG ##########################")
 
 	// getting machine name
-	id, err := ioutil.ReadFile(filepath.Join("/sys/class/dmi/id", "product_uuid"))
+	id, err := os.Hostname()
 	if err != nil {
 		log.Fatalln("[ERROR] unable to get system id: ", err)
 	}
