@@ -272,6 +272,20 @@ func dockerListener(docker *dockerclient.Client, dokchan chan *dockerclient.APIE
 				}
 
 				volume := cont.Volumes[PATH_VOL_SIPP]
+				if volume == "" {
+					for _, v := range cont.Mounts {
+						if v.Destination == PATH_VOL_SIPP {
+							volume = v.Source
+							break
+						}
+					}
+				}
+
+				if volume == "" {
+					log.Println("[WARN] unable to find volume for container ", event.ID)
+					continue
+				}
+
 				tails := &Tails{
 					contname: cont.Name[1:],
 					vol:      volume,
