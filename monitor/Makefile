@@ -5,6 +5,9 @@ all:
 	mkdir -p $(BIN)
 	go build -o $(BIN)/$(SIPP) $(SIPP).go
 
+clean:
+	rm -rf $(BIN)
+
 install:
 	/usr/bin/install $(BIN)/$(SIPP) /usr/local/bin/
 
