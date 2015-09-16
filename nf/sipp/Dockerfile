@@ -15,7 +15,7 @@ COPY run_sipp.sh /
 RUN chmod +x /run_sipp.sh
 
 # command to run sipp
-CMD ["/bin/sh", "/run_sipp.sh"]
+CMD ["/bin/bash", "/run_sipp.sh"]
 
 # expose udp port 5060 & 8888
 EXPOSE 5060/udp
