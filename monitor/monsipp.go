@@ -15,10 +15,10 @@ import (
 )
 
 import (
-	"github.com/ActiveState/tail"
 	"github.com/VividCortex/godaemon"
 	dockerclient "github.com/fsouza/go-dockerclient"
 	influxdb "github.com/influxdb/influxdb/client"
+	"github.com/mangalaman93/tail"
 )
 
 const (
@@ -28,6 +28,7 @@ const (
 	PATH_VOL_SIPP       = "/data"
 	INFLUXDB_DB         = "cadvisor"
 	STAT_FIELD_COUNT    = 87
+	LINE_LENGTH         = 3000
 	NET_BUFFER_SIZE     = 1000
 	INFLUXDB_BATCH_SIZE = 200
 )
@@ -72,7 +73,7 @@ func (t *Tails) dispatchRtts(influxchan chan *influxdb.Point) {
 			continue
 		}
 
-		fields := strings.Split(line.Text, ";")
+		fields := strings.Split(line, ";")
 		if len(fields) < 3 {
 			log.Println("[WARN] unable to parse string: ", line)
 			continue
@@ -97,6 +98,8 @@ func (t *Tails) dispatchRtts(influxchan chan *influxdb.Point) {
 			Precision: "s",
 		}
 	}
+
+	log.Printf("[INFO] exiting dispatchRtts for container %s with error: %s\n", t.contname, t.rtt.Err)
 }
 
 func (t *Tails) dispatchStats(influxchan chan *influxdb.Point) {
@@ -107,7 +110,7 @@ func (t *Tails) dispatchStats(influxchan chan *influxdb.Point) {
 			continue
 		}
 
-		fields := strings.Split(line.Text, ";")
+		fields := strings.Split(line, ";")
 		if len(fields) < STAT_FIELD_COUNT {
 			log.Printf("[WARN] only %v fields in %s\n", len(fields), fields)
 			continue
@@ -134,6 +137,8 @@ func (t *Tails) dispatchStats(influxchan chan *influxdb.Point) {
 			}
 		}
 	}
+
+	log.Printf("[INFO] exiting dispatchStats for container %s with error: %s\n", t.contname, t.stat.Err)
 }
 
 func (t *Tails) TailVolume(influxchan chan *influxdb.Point) {
@@ -167,14 +172,14 @@ func (t *Tails) TailVolume(influxchan chan *influxdb.Point) {
 		}
 	}
 
-	t.stat, err = tail.TailFile(files[0], tail.Config{Follow: true, ReOpen: false})
+	t.stat, err = tail.TailFile(files[0], LINE_LENGTH)
 	if err != nil {
 		log.Printf("[WARN] unable to read stat file for volume %s of container %s\n", t.vol, t.contname)
 	} else {
 		go t.dispatchStats(influxchan)
 	}
 
-	t.rtt, err = tail.TailFile(files[1], tail.Config{Follow: true, ReOpen: false})
+	t.rtt, err = tail.TailFile(files[1], LINE_LENGTH)
 	if err != nil {
 		log.Printf("[WARN] unable to read rtt file for volume %s of container %s\n", t.vol, t.contname)
 	} else {
@@ -184,8 +189,6 @@ func (t *Tails) TailVolume(influxchan chan *influxdb.Point) {
 	<-t.stopchan
 	t.rtt.Stop()
 	t.stat.Stop()
-	t.rtt.Cleanup()
-	t.stat.Cleanup()
 	log.Printf("[INFO] cleaned up for volume %s of container %s\n", t.vol, t.contname)
 	t.waitchan <- true
 }
