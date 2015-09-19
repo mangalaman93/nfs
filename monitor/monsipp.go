@@ -30,7 +30,7 @@ const (
 	STAT_FIELD_COUNT    = 87
 	LINE_LENGTH         = 3000
 	NET_BUFFER_SIZE     = 1000
-	INFLUXDB_BATCH_SIZE = 200
+	INFLUXDB_BATCH_SIZE = 50
 )
 
 var MEASUREMENTS = map[int]string{
@@ -67,10 +67,36 @@ func (t *Tails) String() string {
 
 func (t *Tails) dispatchRtts(influxchan chan *influxdb.Point) {
 	firstline := true
+	ticker := time.NewTicker(1 * time.Second).C
+	sum := 0.0
+	count := 0
+
 	for line := range t.rtt.Lines {
 		if firstline {
 			firstline = false
 			continue
+		}
+
+		select {
+		case <-ticker:
+			if count != 0 {
+				influxchan <- &influxdb.Point{
+					Measurement: "response_time",
+					Tags: map[string]string{
+						"container_name": t.contname,
+						"machine":        machine_name,
+					},
+					Fields: map[string]interface{}{
+						"value": sum / float64(count),
+					},
+					Time:      time.Now(),
+					Precision: "s",
+				}
+				count = 0
+				sum = 0
+			}
+		default:
+			// do nothing
 		}
 
 		fields := strings.Split(line, ";")
@@ -85,18 +111,8 @@ func (t *Tails) dispatchRtts(influxchan chan *influxdb.Point) {
 			continue
 		}
 
-		influxchan <- &influxdb.Point{
-			Measurement: "response_time",
-			Tags: map[string]string{
-				"container_name": t.contname,
-				"machine":        machine_name,
-			},
-			Fields: map[string]interface{}{
-				"value": value,
-			},
-			Time:      time.Now(),
-			Precision: "s",
-		}
+		sum += value
+		count++
 	}
 
 	log.Printf("[INFO] exiting dispatchRtts for container %s with error: %s\n", t.contname, t.rtt.Err)
