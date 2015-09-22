@@ -37,6 +37,7 @@ var MEASUREMENTS = map[int]string{
 	6:  "call_rate",
 	8:  "incoming_call",
 	10: "outgoing_call",
+	13: "current_calls",
 	14: "successful_calls",
 	16: "failed_calls",
 	20: "failed_max_udp_retrans",
