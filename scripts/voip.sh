@@ -55,7 +55,7 @@ check_host() {
 }
 
 # $1 -> id
-check_show() {
+err_if_running() {
   nova show $1 &>/dev/null
   if [[ $? -eq 0 ]]; then
     echo "Error: $1 is already running!"
@@ -64,7 +64,7 @@ check_show() {
 }
 
 # $1 -> id
-check_show_running() {
+err_if_not_running() {
   nova show $1 &>/dev/null
   if [[ $? -ne 0 ]]; then
     echo "Error: $1 did not run!"
@@ -86,32 +86,33 @@ start_exp_on_cur() {
     exit 1
   fi
 
-  check_show sipp-server1
-  check_show sipp-server2
-  check_show sipp-client1
-  check_show sipp-client2
-  check_show snort
-
-  # run cadvisor
-  docker run -d --net=host --volume=/:/rootfs:ro --volume=/var/run:/var/run:rw --volume=/sys:/sys:ro --volume=/var/lib/docker/:/var/lib/docker:ro --name=$CUR_HOST-cadvisor mangalaman93/cadvisor -storage_driver=influxdb -storage_driver_user=$INFLUXDB_USER -storage_driver_password=$INFLUXDB_PASS -storage_driver_host=$INFLUXDB_IP:$INFLUXDB_PORT > /dev/null
+  err_if_running sipp-server1
+  err_if_running sipp-server2
+  err_if_running sipp-client1
+  err_if_running sipp-client2
+  err_if_running snort
 
   # run monsipp
-  cd ~/nfs/ && sudo ./monsipp -d $INFLUXDB_IP:$INFLUXDB_PORT:$INFLUXDB_USER:$INFLUXDB_PASS && cd
+  cd ~/nfs/ && sudo ./monsipp -d $INFLUXDB_IP:$INFLUXDB_PORT:$INFLUXDB_USER:$INFLUXDB_PASS
+
+  # wait for monsipp to start on other server
+  echo -n "run the same script on $OTH_HOST and press enter"
+  read text
 
   # run sipp server1
   echo "running sipp-server1"
-  nova boot --image mangalaman93/sipp --meta ARGS="-sn uas" --availability-zone regionOne:$CUR_HOST --flavor c1.medium sipp-server1 > /dev/null
+  nova boot --image mangalaman93/sipp --meta ARGS="-sn uas" --availability-zone regionOne:$OTH_HOST --flavor c1.medium sipp-server1 > /dev/null
   sleep 3
-  check_host sipp-server1 $CUR_HOST
+  check_host sipp-server1 $OTH_HOST
   find_ip sipp-server1
   SERVER1_IP=$OUT_IP
   echo "server1: $SERVER1_IP"
 
   # run sipp server2
   echo "running sipp-server2"
-  nova boot --image mangalaman93/sipp --meta ARGS="-sn uas" --availability-zone regionOne:$CUR_HOST --flavor c1.medium sipp-server2 > /dev/null
+  nova boot --image mangalaman93/sipp --meta ARGS="-sn uas" --availability-zone regionOne:$OTH_HOST --flavor c1.medium sipp-server2 > /dev/null
   sleep 3
-  check_host sipp-server2 $CUR_HOST
+  check_host sipp-server2 $OTH_HOST
   find_ip sipp-server2
   SERVER2_IP=$OUT_IP
   echo "server2: $SERVER2_IP"
@@ -147,6 +148,9 @@ start_exp_on_cur() {
   CLIENT2_IP=$OUT_IP
   echo "client2: $CLIENT2_IP"
 
+  # run cadvisor
+  docker run -d --net=host --volume=/:/rootfs:ro --volume=/var/run:/var/run:rw --volume=/sys:/sys:ro --volume=/var/lib/docker/:/var/lib/docker:ro --name=$CUR_HOST-cadvisor mangalaman93/cadvisor -storage_driver=influxdb -storage_driver_user=$INFLUXDB_USER -storage_driver_password=$INFLUXDB_PASS -storage_driver_host=$INFLUXDB_IP:$INFLUXDB_PORT > /dev/null
+
   # settings
   echo "setting up routes"
   FULL_CLIENT1_DOCKER_ID=$(docker inspect --format '{{ .Id }}' sipp-client1-$CLIENT1_ID)
@@ -168,11 +172,11 @@ start_exp_on_cur() {
     echo "Error: monsipp did not run!"
   fi
 
-  check_show_running sipp-server1
-  check_show_running sipp-server2
-  check_show_running sipp-client1
-  check_show_running sipp-client2
-  check_show_running snort
+  err_if_not_running sipp-server1
+  err_if_not_running sipp-server2
+  err_if_not_running sipp-client1
+  err_if_not_running sipp-client2
+  err_if_not_running snort
 }
 
 start_exp_on_oth() {
@@ -188,11 +192,18 @@ start_exp_on_oth() {
     exit 1
   fi
 
-  check_show_running sipp-server1
-  check_show_running sipp-server2
-  check_show_running sipp-client1
-  check_show_running sipp-client2
-  check_show_running snort
+  # run monsipp
+  cd ~/nfs/ && sudo ./monsipp -d $INFLUXDB_IP:$INFLUXDB_PORT:$INFLUXDB_USER:$INFLUXDB_PASS
+
+  # wait for containers to start
+  echo -n "press enter when script is done running on $CUR_HOST"
+  read text
+
+  err_if_not_running sipp-server1
+  err_if_not_running sipp-server2
+  err_if_not_running sipp-client1
+  err_if_not_running sipp-client2
+  err_if_not_running snort
 
   SNORT_ID=$(nova show snort | grep "| id" | awk '{print $4}')
   echo "snort-id: $SNORT_ID"
@@ -204,9 +215,6 @@ start_exp_on_oth() {
 
   # run cadvisor
   docker run -d --net=host --volume=/:/rootfs:ro --volume=/var/run:/var/run:rw --volume=/sys:/sys:ro --volume=/var/lib/docker/:/var/lib/docker:ro --name=$OTH_HOST-cadvisor mangalaman93/cadvisor -storage_driver=influxdb -storage_driver_user=$INFLUXDB_USER -storage_driver_password=$INFLUXDB_PASS -storage_driver_host=$INFLUXDB_IP:$INFLUXDB_PORT > /dev/null
-
-  # run monsipp
-  cd ~/nfs/ && sudo ./monsipp -d $INFLUXDB_IP:$INFLUXDB_PORT:$INFLUXDB_USER:$INFLUXDB_PASS && cd
 
   find_ip sipp-server1
   SERVER1_IP=$OUT_IP
