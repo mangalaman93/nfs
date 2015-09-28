@@ -1,7 +1,7 @@
 require 'spreadsheet'
 
 unless ARGV.length == 2
-  puts "usage: ruby parse.rb data-file ws-file"
+  puts "usage: ruby netparse.rb data-file ws-file"
   exit
 end
 
