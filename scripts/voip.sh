@@ -6,12 +6,6 @@ if [ "$#" -lt 1 ]; then
   exit 1
 fi
 
-# get openstack environment variables
-source ~/devstack/openrc admin
-
-# influxdb config
-source ~/nfs/.influxdb.config
-
 # hosts
 CUR_HOST=jedi054
 OTH_HOST=jedi055
@@ -21,6 +15,30 @@ IS_SNORT=true
 HOST_SIPP_CLIENT=$CUR_HOST
 HOST_SIPP_SERVER=$CUR_HOST
 HOST_SNORT=$CUR_HOST
+NUM_SIPP=3
+
+if [ "$#" -gt 1 ]; then
+  if [ "$#" -lt 5 ]; then
+    echo "error!"
+    echo "Usage: $0 start|stop host_[client server snort(false)] [num_sipp]" >&2
+    exit 1
+  else
+    HOST_SIPP_CLIENT=$2
+    HOST_SIPP_SERVER=$3
+    if [[ "$4" == "false" ]]; then
+      IS_SNORT=false
+    else
+      IS_SNORT=true
+      HOST_SNORT=$4
+    fi
+    NUM_SIPP=$5
+  fi
+fi
+
+# get openstack environment variables
+source ~/devstack/openrc admin
+# influxdb config
+source ~/nfs/.influxdb.config
 
 # finds ip address given id of nova instance! $1 -> id
 # ip address is stored in OUT_IP variable after return
@@ -42,7 +60,10 @@ stop_exp() {
   sudo kill $(pidof monsipp) &>/dev/null
 
   echo "delete containers"
-  nova delete sipp-server1 sipp-server2 sipp-client1 sipp-client2 snort &>/dev/null
+  nova delete snort &>/dev/null
+  for (( i = 0; i < $NUM_SIPP; i++ )); do
+    nova delete "sipp-client$i" "sipp-server$i" &>/dev/null
+  done
 
   echo "delete volumes yourselves!!!"
   echo "cleanup done!"
@@ -83,47 +104,32 @@ set_routes() {
   fi
 
   THIS_HOST=$(hostname)
-  if [[ -z "$SERVER1_IP" ]]; then
-    find_ip sipp-server1
-    SERVER1_IP=$OUT_IP
-  fi
-  if [[ -z "$CLIENT1_IP" ]]; then
-    find_ip sipp-client1
-    CLIENT1_IP=$OUT_IP
-  fi
-  if [[ -z "$SERVER2_IP" ]]; then
-    find_ip sipp-server2
-    SERVER2_IP=$OUT_IP
-  fi
-  if [[ -z "$CLIENT2_IP" ]]; then
-    find_ip sipp-client2
-    CLIENT2_IP=$OUT_IP
-  fi
-  if [[ -z "$ROUTER_IP" ]]; then
-    find_ip snort
-    ROUTER_IP=$OUT_IP
-  fi
+  for (( i = 0; i < $NUM_SIPP; i++ )); do
+    find_ip "sipp-server$i"
+    SERVER_IP[$i]=$OUT_IP
+  done
+  find_ip snort
+  ROUTER_IP=$OUT_IP
 
   echo "setting up routes"
   if [[ "$HOST_SIPP_CLIENT" == "$THIS_HOST" ]]; then
-    CLIENT1_ID=$(nova show sipp-client1 | grep "| id" | awk '{print $4}')
-    FULL_CLIENT1_DOCKER_ID=$(docker inspect --format '{{ .Id }}' sipp-client1-$CLIENT1_ID)
-    sudo ip netns exec $FULL_CLIENT1_DOCKER_ID ip route add $SERVER1_IP via $ROUTER_IP
-
-    CLIENT2_ID=$(nova show sipp-client2 | grep "| id" | awk '{print $4}')
-    FULL_CLIENT2_DOCKER_ID=$(docker inspect --format '{{ .Id }}' sipp-client2-$CLIENT2_ID)
-    sudo ip netns exec $FULL_CLIENT2_DOCKER_ID ip route add $SERVER2_IP via $ROUTER_IP
+    for (( i = 0; i < $NUM_SIPP; i++ )); do
+      CLIENT_ID=$(nova show sipp-client$i | grep "| id" | awk '{print $4}')
+      FULL_CLIENT_DOCKER_ID=$(docker inspect --format '{{ .Id }}' sipp-client$i-$CLIENT_ID)
+      sudo ip netns exec $FULL_CLIENT_DOCKER_ID ip route add ${SERVER_IP[$i]} via $ROUTER_IP
+    done
   fi
 
   if [[ "$HOST_SNORT" == "$THIS_HOST" ]]; then
     SNORT_ID=$(nova show snort | grep "| id" | awk '{print $4}')
     FULL_SNORT_DOCKER_ID=$(docker inspect --format '{{ .Id }}' snort-$SNORT_ID)
-    sudo ip netns exec $FULL_SNORT_DOCKER_ID iptables -t nat -A PREROUTING -d $ROUTER_IP -s $CLIENT1_IP -j DNAT --to-destination $SERVER1_IP
-    sudo ip netns exec $FULL_SNORT_DOCKER_ID iptables -t nat -I POSTROUTING -s $CLIENT1_IP -j SNAT --to-source $ROUTER_IP
-    sudo ip netns exec $FULL_SNORT_DOCKER_ID iptables -A FORWARD -d $SERVER1_IP -i eth0 -j ACCEPT
-    sudo ip netns exec $FULL_SNORT_DOCKER_ID iptables -t nat -A PREROUTING -d $ROUTER_IP -s $CLIENT2_IP -j DNAT --to-destination $SERVER2_IP
-    sudo ip netns exec $FULL_SNORT_DOCKER_ID iptables -t nat -I POSTROUTING -s $CLIENT2_IP -j SNAT --to-source $ROUTER_IP
-    sudo ip netns exec $FULL_SNORT_DOCKER_ID iptables -A FORWARD -d $SERVER2_IP -i eth0 -j ACCEPT
+    for (( i = 0; i < $NUM_SIPP; i++ )); do
+      find_ip "sipp-client$i"
+      CLIENT_IP=$OUT_IP
+      sudo ip netns exec $FULL_SNORT_DOCKER_ID iptables -t nat -A PREROUTING -d $ROUTER_IP -s $CLIENT_IP -j DNAT --to-destination ${SERVER_IP[$i]}
+      sudo ip netns exec $FULL_SNORT_DOCKER_ID iptables -t nat -I POSTROUTING -s $CLIENT_IP -j SNAT --to-source $ROUTER_IP
+      sudo ip netns exec $FULL_SNORT_DOCKER_ID iptables -A FORWARD -d ${SERVER_IP[$i]} -i eth0 -j ACCEPT
+    done
   fi
 }
 
@@ -140,10 +146,10 @@ start_exp_on_cur() {
     exit 1
   fi
 
-  err_if_running sipp-server1
-  err_if_running sipp-server2
-  err_if_running sipp-client1
-  err_if_running sipp-client2
+  for (( i = 0; i < $NUM_SIPP; i++ )); do
+    err_if_running "sipp-server$i"
+    err_if_running "sipp-client$i"
+  done
   err_if_running snort
 
   # run monsipp
@@ -153,23 +159,16 @@ start_exp_on_cur() {
   echo -n "run the same script on $OTH_HOST and press enter"
   read text
 
-  # run sipp server1
-  echo "running sipp-server1"
-  nova boot --image mangalaman93/sipp --meta ARGS="-sn uas" --availability-zone regionOne:$HOST_SIPP_SERVER --flavor c1.medium sipp-server1 > /dev/null
-  sleep 3
-  check_host sipp-server1 $HOST_SIPP_SERVER
-  find_ip sipp-server1
-  SERVER1_IP=$OUT_IP
-  echo "server1: $SERVER1_IP"
-
-  # run sipp server2
-  echo "running sipp-server2"
-  nova boot --image mangalaman93/sipp --meta ARGS="-sn uas" --availability-zone regionOne:$HOST_SIPP_SERVER --flavor c1.medium sipp-server2 > /dev/null
-  sleep 3
-  check_host sipp-server2 $HOST_SIPP_SERVER
-  find_ip sipp-server2
-  SERVER2_IP=$OUT_IP
-  echo "server2: $SERVER2_IP"
+  # run sipp servers
+  for (( i = 0; i < $NUM_SIPP; i++ )); do
+    echo "running sipp-server$i"
+    nova boot --image mangalaman93/sipp --meta ARGS="-sn uas" --availability-zone regionOne:$HOST_SIPP_SERVER --flavor c1.small "sipp-server$i" > /dev/null
+    sleep 3
+    check_host "sipp-server$i" $HOST_SIPP_SERVER
+    find_ip "sipp-server$i"
+    SERVER_IP[$i]=$OUT_IP
+    echo "server$i: ${SERVER_IP[$i]}"
+  done
 
   # run snort
   if [[ "$IS_SNORT" == "true" ]]; then
@@ -182,23 +181,16 @@ start_exp_on_cur() {
     echo "router: $ROUTER_IP"
   fi
 
-  # run sipp-client1
-  echo "running sipp-client1"
-  nova boot --image mangalaman93/sipp --meta ARGS="-sn uac $SERVER1_IP:5060" --availability-zone regionOne:$HOST_SIPP_CLIENT --flavor c1.medium sipp-client1 > /dev/null
-  sleep 3
-  check_host sipp-client1 $HOST_SIPP_CLIENT
-  find_ip sipp-client1
-  CLIENT1_IP=$OUT_IP
-  echo "client1: $CLIENT1_IP"
-
-  # run sipp-client2
-  echo "running sipp-client2"
-  nova boot --image mangalaman93/sipp --meta ARGS="-sn uac $SERVER2_IP:5060" --availability-zone regionOne:$HOST_SIPP_CLIENT --flavor c1.medium sipp-client2 > /dev/null
-  sleep 3
-  check_host sipp-client2 $HOST_SIPP_CLIENT
-  find_ip sipp-client2
-  CLIENT2_IP=$OUT_IP
-  echo "client2: $CLIENT2_IP"
+  # run sipp-clients
+  for (( i = 0; i < $NUM_SIPP; i++ )); do
+    echo "running sipp-client$i"
+    nova boot --image mangalaman93/sipp --meta ARGS="-sn uac ${SERVER_IP[$i]}:5060" --availability-zone regionOne:$HOST_SIPP_CLIENT --flavor c1.small "sipp-client$i" > /dev/null
+    sleep 3
+    check_host "sipp-client$i" $HOST_SIPP_CLIENT
+    find_ip "sipp-client$i"
+    CLIENT_IP=$OUT_IP
+    echo "client$i: $CLIENT_IP"
+  done
 
   # run cadvisor
   docker run -d --net=host --volume=/:/rootfs:ro --volume=/var/run:/var/run:rw --volume=/sys:/sys:ro --volume=/var/lib/docker/:/var/lib/docker:ro --name=$CUR_HOST-cadvisor mangalaman93/cadvisor -storage_driver=influxdb -storage_driver_user=$INFLUXDB_USER -storage_driver_password=$INFLUXDB_PASS -storage_driver_host=$INFLUXDB_IP:$INFLUXDB_PORT > /dev/null
@@ -218,10 +210,11 @@ start_exp_on_cur() {
     exit 1
   fi
 
-  err_if_not_running sipp-server1
-  err_if_not_running sipp-server2
-  err_if_not_running sipp-client1
-  err_if_not_running sipp-client2
+  for (( i = 0; i < $NUM_SIPP; i++ )); do
+    err_if_not_running "sipp-server$i"
+    err_if_not_running "sipp-client$i"
+  done
+
   if [[ "$IS_SNORT" == "true" ]]; then
     err_if_not_running snort
   fi
@@ -249,10 +242,11 @@ start_exp_on_oth() {
   echo -n "press enter when script is done running on $CUR_HOST"
   read text
 
-  err_if_not_running sipp-server1
-  err_if_not_running sipp-server2
-  err_if_not_running sipp-client1
-  err_if_not_running sipp-client2
+  for (( i = 0; i < $NUM_SIPP; i++ )); do
+    err_if_not_running "sipp-server$i"
+    err_if_not_running "sipp-client$i"
+  done
+
   if [[ "$IS_SNORT" == "true" ]]; then
     err_if_not_running snort
   fi
@@ -277,24 +271,6 @@ start_exp_on_oth() {
 
   set_routes
 }
-
-
-if [ "$#" -gt 1 ]; then
-  if [ "$#" -lt 4 ]; then
-    echo "error!"
-    echo "Usage: $0 start|stop [host_client host_server host_snort(false)]" >&2
-    exit 1
-  else
-    HOST_SIPP_CLIENT=$2
-    HOST_SIPP_SERVER=$3
-    if [[ "$4" == "false" ]]; then
-      IS_SNORT=false
-    else
-      IS_SNORT=true
-      HOST_SNORT=$4
-    fi
-  fi
-fi
 
 case $1 in
   "start")
