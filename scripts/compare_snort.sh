@@ -1,31 +1,31 @@
 #!/bin/bash
 
+if [ "$#" -lt 6 ]; then
+  echo "error!"
+  echo "Usage: $0 [with snort]<container> <from> <to> [without]<container> <from> <to>" >&2
+  exit 1
+fi
+
 # influxdb
-INFLUXDB_IP=
-INFLUXDB_PORT=
-INFLUXDB_USER=
-INFLUXDB_PASS=
+source .influxdb.config
 INFLUXDB_DB=cadvisor
 
 # without snort
-container="sipp-server1-b309cf67-e824-4914-b07c-00964766ce59"
-from=1443417045727
-to=1443418189982
+with_container=$1
+with_from=$2
+with_to=$3
+without_container=$4
+without_from=$5
+without_to=$6
 
-ruby idb.rb -db $INFLUXDB_DB -from $from -to $to -ip $INFLUXDB_IP -user $INFLUXDB_USER -pass $INFLUXDB_PASS -series call_rate -cont $container
-ruby idb.rb -db $INFLUXDB_DB -from $from -to $to -ip $INFLUXDB_IP -user $INFLUXDB_USER -pass $INFLUXDB_PASS -series retransmissions -cont $container
-ruby idb.rb -db $INFLUXDB_DB -from $from -to $to -ip $INFLUXDB_IP -user $INFLUXDB_USER -pass $INFLUXDB_PASS -series response_time -cont $container
-ruby idb.rb -db $INFLUXDB_DB -from $from -to $to -ip $INFLUXDB_IP -user $INFLUXDB_USER -pass $INFLUXDB_PASS -series failed_calls -cont $container
+for metric in "call_rate" "retransmissions" "response_time" "failed_calls"; do
+	ruby idb.rb -db $INFLUXDB_DB -from $with_from -to $with_to -ip $INFLUXDB_IP -user $INFLUXDB_USER -pass $INFLUXDB_PASS -series $metric -cont $with_container
+done
+paste call_rate.txt retransmissions.txt response_time.txt failed_calls.txt > with_snort.col
 
-# wait
-read text
+for metric in "call_rate" "retransmissions" "response_time" "failed_calls"; do
+	ruby idb.rb -db $INFLUXDB_DB -from $without_from -to $without_to -ip $INFLUXDB_IP -user $INFLUXDB_USER -pass $INFLUXDB_PASS -series $metric -cont $without_container
+done
+paste call_rate.txt retransmissions.txt response_time.txt failed_calls.txt > without_snort.col
 
-# with snort
-container="sipp-server1-ad699f32-97dd-4468-b0f2-9f143bed40cf"
-from=1443415206518
-to=1443416529796
-
-ruby idb.rb -db $INFLUXDB_DB -from $from -to $to -ip $INFLUXDB_IP -user $INFLUXDB_USER -pass $INFLUXDB_PASS -series call_rate -cont $container
-ruby idb.rb -db $INFLUXDB_DB -from $from -to $to -ip $INFLUXDB_IP -user $INFLUXDB_USER -pass $INFLUXDB_PASS -series retransmissions -cont $container
-ruby idb.rb -db $INFLUXDB_DB -from $from -to $to -ip $INFLUXDB_IP -user $INFLUXDB_USER -pass $INFLUXDB_PASS -series response_time -cont $container
-ruby idb.rb -db $INFLUXDB_DB -from $from -to $to -ip $INFLUXDB_IP -user $INFLUXDB_USER -pass $INFLUXDB_PASS -series failed_calls -cont $container
+rm *.txt
