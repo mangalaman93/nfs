@@ -2,7 +2,7 @@
 
 if [ "$#" -lt 1 ]; then
   echo "error!"
-  echo "Usage: $0 start|stop [host_client host_server host_snort]" >&2
+  echo "Usage: $0 start|stop" >&2
   exit 1
 fi
 
@@ -16,24 +16,6 @@ HOST_SIPP_CLIENT=$CUR_HOST
 HOST_SIPP_SERVER=$CUR_HOST
 HOST_SNORT=$CUR_HOST
 NUM_SIPP=3
-
-if [ "$#" -gt 1 ]; then
-  if [ "$#" -lt 5 ]; then
-    echo "error!"
-    echo "Usage: $0 start|stop host_[client server snort(false)] [num_sipp]" >&2
-    exit 1
-  else
-    HOST_SIPP_CLIENT=$2
-    HOST_SIPP_SERVER=$3
-    if [[ "$4" == "false" ]]; then
-      IS_SNORT=false
-    else
-      IS_SNORT=true
-      HOST_SNORT=$4
-    fi
-    NUM_SIPP=$5
-  fi
-fi
 
 # get openstack environment variables
 source ~/devstack/openrc admin
@@ -274,6 +256,23 @@ start_exp_on_oth() {
 
 case $1 in
   "start")
+    if [ "$#" -gt 1 ]; then
+      if [ "$#" -lt 5 ]; then
+        echo "error!"
+        echo "Usage: $0 start host_[client server snort(false)] [num_sipp]" >&2
+        exit 1
+      else
+        HOST_SIPP_CLIENT=$2
+        HOST_SIPP_SERVER=$3
+        if [[ "$4" == "false" ]]; then
+          IS_SNORT=false
+        else
+          IS_SNORT=true
+          HOST_SNORT=$4
+        fi
+        NUM_SIPP=$5
+      fi
+    fi
     case $(hostname) in
       $CUR_HOST)
         start_exp_on_cur
@@ -291,6 +290,15 @@ case $1 in
     esac
     ;;
   "stop")
+    if [ "$#" -gt 1 ]; then
+      if [ "$#" -gt 2 ]; then
+        echo "error!"
+        echo "Usage: $0 stop [num_sipp]" >&2
+        exit 1
+      else
+        NUM_SIPP=$2
+      fi
+    fi
     stop_exp
     ;;
   *)
