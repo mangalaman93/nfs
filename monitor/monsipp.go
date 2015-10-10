@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -56,6 +57,7 @@ type Volume struct {
 	stat     *tail.Tail
 	stopchan chan bool
 	waitchan chan bool
+	wg       sync.WaitGroup
 }
 
 var machine_name string
@@ -67,6 +69,9 @@ func (v *Volume) String() string {
 }
 
 func (v *Volume) dispatchRtts(influxchan chan *influxdb.Point) {
+	v.wg.Add(1)
+	defer v.wg.Done()
+
 	// skipping first line
 	for _ = range v.rtt.Lines {
 		break
@@ -87,8 +92,7 @@ func (v *Volume) dispatchRtts(influxchan chan *influxdb.Point) {
 					Fields: map[string]interface{}{
 						"value": sum / float64(count),
 					},
-					Time:      time.Now(),
-					Precision: "s",
+					Time: time.Now(),
 				}
 				count = 0
 				sum = 0
@@ -117,6 +121,9 @@ func (v *Volume) dispatchRtts(influxchan chan *influxdb.Point) {
 }
 
 func (v *Volume) dispatchStats(influxchan chan *influxdb.Point) {
+	v.wg.Add(1)
+	defer v.wg.Done()
+
 	for _ = range v.stat.Lines {
 		break
 	}
@@ -143,8 +150,7 @@ func (v *Volume) dispatchStats(influxchan chan *influxdb.Point) {
 				Fields: map[string]interface{}{
 					"value": value,
 				},
-				Time:      time.Now(),
-				Precision: "s",
+				Time: time.Now(),
 			}
 		}
 	}
@@ -176,7 +182,7 @@ func (v *Volume) Tail(influxchan chan *influxdb.Point) {
 		select {
 		case <-v.stopchan:
 			log.Printf("[INFO] no clean up required for volume %s of container %s\n", v.id, v.cont)
-			v.waitchan <- true
+			close(v.waitchan)
 			return
 		case <-timeout:
 			continue
@@ -200,12 +206,13 @@ func (v *Volume) Tail(influxchan chan *influxdb.Point) {
 	<-v.stopchan
 	v.rtt.Stop()
 	v.stat.Stop()
+	v.wg.Wait()
 	log.Printf("[INFO] cleaned up for volume %s of container %s\n", v.id, v.cont)
-	v.waitchan <- true
+	close(v.waitchan)
 }
 
 func (v *Volume) StopTail() {
-	v.stopchan <- true
+	close(v.stopchan)
 	<-v.waitchan
 }
 
@@ -233,14 +240,13 @@ func bgWrite(influxchan chan *influxdb.Point, done chan bool) {
 	pts := make([]influxdb.Point, INFLUXDB_BATCH_SIZE)
 
 	for {
-		point := <-influxchan
-		if point == nil {
-			sendBatch(pts[:count])
-			done <- true
-			break
-		} else {
+		point, more := <-influxchan
+		if more {
 			pts[count] = *point
 			count += 1
+		} else {
+			sendBatch(pts[:count])
+			break
 		}
 
 		// if buffer is full
@@ -249,29 +255,35 @@ func bgWrite(influxchan chan *influxdb.Point, done chan bool) {
 			count = 0
 		}
 	}
+
+	log.Println("[INFO] exiting influxdb routine!")
+	close(done)
 }
 
 func dockerListener(docker *dockerclient.Client, dokchan chan *dockerclient.APIEvents, done chan bool) {
 	log.Println("[INFO] listening to docker container events")
-	defer func() { done <- true }()
+	defer func() {
+		log.Println("[INFO] exiting docker listener!")
+		close(done)
+	}()
 
 	influxchan := make(chan *influxdb.Point, NET_BUFFER_SIZE)
-	donechan := make(chan bool, 1)
+	donechan := make(chan bool)
 	go bgWrite(influxchan, donechan)
 	defer func() {
-		influxchan <- nil
+		close(influxchan)
 		<-donechan
 	}()
 
 	defer func() { cleanupVolumes() }()
 	for {
-		event := <-dokchan
-		log.Println("[INFO] event occurred:", event)
-
-		switch event.Status {
-		case "EOF":
+		event, more := <-dokchan
+		if !more {
 			return
+		}
 
+		log.Println("[INFO] event occurred:", event)
+		switch event.Status {
 		case "start":
 			if _, ok := sippvols[event.ID]; ok {
 				log.Println("[WARN] duplicate event for container ", event.ID)
@@ -303,8 +315,8 @@ func dockerListener(docker *dockerclient.Client, dokchan chan *dockerclient.APIE
 				v := &Volume{
 					id:       volume,
 					cont:     cont.Name[1:],
-					stopchan: make(chan bool, 1),
-					waitchan: make(chan bool, 1),
+					stopchan: make(chan bool),
+					waitchan: make(chan bool),
 				}
 
 				sippvols[event.ID] = v
@@ -436,7 +448,7 @@ func main() {
 	}
 
 	dokchan := make(chan *dockerclient.APIEvents, 100)
-	waitchan := make(chan bool, 1)
+	waitchan := make(chan bool)
 	err = docker.AddEventListener(dokchan)
 	if err != nil {
 		log.Fatalln("[ERROR] unable to add docker event listener, exiting!")
@@ -447,6 +459,7 @@ func main() {
 	_ = <-sigs
 	log.Println("[INFO] beginning cleanup!")
 	docker.RemoveEventListener(dokchan)
-	dokchan <- dockerclient.EOFEvent
+	close(dokchan)
 	<-waitchan
+	log.Println("[INFO] goodbye!")
 }
