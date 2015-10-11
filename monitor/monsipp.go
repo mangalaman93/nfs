@@ -3,10 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/url"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -32,6 +34,8 @@ const (
 	MAX_LINE_LENGTH     = 3000
 	NET_BUFFER_SIZE     = 1000
 	INFLUXDB_BATCH_SIZE = 50
+	UDP_QUEUE_FREQ      = 500
+	SIPP_UDP_PORT       = 5060
 )
 
 var MEASUREMENTS = map[int]string{
@@ -109,7 +113,7 @@ func (v *Volume) dispatchRtts(influxchan chan *influxdb.Point) {
 
 		value, err := strconv.ParseFloat(fields[1], 32)
 		if err != nil {
-			log.Println("[WARN] unable to parse value ", fields[1])
+			log.Println("[WARN] unable to parse value", fields[1])
 			continue
 		}
 
@@ -135,10 +139,11 @@ func (v *Volume) dispatchStats(influxchan chan *influxdb.Point) {
 			continue
 		}
 
+		curtime := time.Now()
 		for index, measurement := range MEASUREMENTS {
 			value, err := strconv.ParseFloat(fields[index], 32)
 			if err != nil {
-				log.Println("[WARN] unable to parse value ", fields[index])
+				log.Println("[WARN] unable to parse value", fields[index])
 				value = 0
 			}
 
@@ -150,7 +155,7 @@ func (v *Volume) dispatchStats(influxchan chan *influxdb.Point) {
 				Fields: map[string]interface{}{
 					"value": value,
 				},
-				Time: time.Now(),
+				Time: curtime,
 			}
 		}
 	}
@@ -158,7 +163,110 @@ func (v *Volume) dispatchStats(influxchan chan *influxdb.Point) {
 	log.Printf("[INFO] exiting dispatchStats for container %s with error: %s\n", v.cont, v.stat.Err)
 }
 
-func (v *Volume) Tail(influxchan chan *influxdb.Point) {
+func (v *Volume) tailUDP(influxchan chan *influxdb.Point, pid int) {
+	v.wg.Add(1)
+	defer v.wg.Done()
+
+	hex_port := strings.ToUpper(fmt.Sprintf("%x", SIPP_UDP_PORT))
+	udp_file := path.Join("/proc/", strconv.Itoa(pid), "/net/udp")
+	if _, err := os.Stat(udp_file); err != nil {
+		log.Printf("[ERROR] %s file not found!\n", udp_file)
+		panic(err)
+	}
+
+	for {
+		select {
+		case <-v.stopchan:
+			log.Println("[INFO] exiting tailUDP for container", v.cont)
+			return
+		default:
+			time.Sleep(time.Duration(UDP_QUEUE_FREQ) * time.Millisecond)
+		}
+
+		out, err := ioutil.ReadFile(udp_file)
+		curtime := time.Now()
+		if err != nil {
+			log.Println("[WARN] unable to read udp file:", err)
+			return
+		}
+
+		line := ""
+		flag := true
+		for _, line = range strings.Split(string(out), "\n") {
+			if strings.Contains(line, hex_port) {
+				flag = false
+				break
+			}
+		}
+
+		if flag {
+			log.Println("[WARN] unable to find udp port for container", v.cont)
+			continue
+		}
+
+		row := strings.Fields(line)
+		if len(row) < 13 {
+			log.Println("[WARN] incorrect parsing of udp file, parsed line:", row)
+			continue
+		}
+
+		if strings.Index(row[4], ":") == -1 {
+			log.Println("[WARN] unable to parse tx/rx queues:", row[4])
+			continue
+		}
+		rx_tx := strings.Split(row[4], ":")
+
+		txqueue, err := strconv.ParseInt(rx_tx[0], 16, 64)
+		if err != nil {
+			log.Println("[WARN] unable to convert tx queue size,", err)
+		} else {
+			influxchan <- &influxdb.Point{
+				Measurement: "udp_txqueue",
+				Tags: map[string]string{
+					"container_name": v.cont,
+				},
+				Fields: map[string]interface{}{
+					"value": txqueue,
+				},
+				Time: curtime,
+			}
+		}
+
+		rxqueue, err := strconv.ParseInt(rx_tx[1], 16, 64)
+		if err != nil {
+			log.Println("[WARN] unable to convert rx queue size,", err)
+		} else {
+			influxchan <- &influxdb.Point{
+				Measurement: "udp_rxqueue",
+				Tags: map[string]string{
+					"container_name": v.cont,
+				},
+				Fields: map[string]interface{}{
+					"value": rxqueue,
+				},
+				Time: curtime,
+			}
+		}
+
+		drops, err := strconv.ParseInt(row[12], 10, 64)
+		if err != nil {
+			log.Println("[WARN] unable to convert number of drops,", err)
+		} else {
+			influxchan <- &influxdb.Point{
+				Measurement: "udp_drops",
+				Tags: map[string]string{
+					"container_name": v.cont,
+				},
+				Fields: map[string]interface{}{
+					"value": drops,
+				},
+				Time: curtime,
+			}
+		}
+	}
+}
+
+func (v *Volume) Tail(influxchan chan *influxdb.Point, pid int) {
 	var files []string
 	var err error
 
@@ -203,6 +311,10 @@ func (v *Volume) Tail(influxchan chan *influxdb.Point) {
 		go v.dispatchRtts(influxchan)
 	}
 
+	// go routine to collect UDP queue size
+	go v.tailUDP(influxchan, pid)
+
+	// wait for stop signal
 	<-v.stopchan
 	v.rtt.Stop()
 	v.stat.Stop()
@@ -320,7 +432,7 @@ func dockerListener(docker *dockerclient.Client, dokchan chan *dockerclient.APIE
 				}
 
 				sippvols[event.ID] = v
-				go v.Tail(influxchan)
+				go v.Tail(influxchan, cont.State.Pid)
 				log.Printf("[INFO] add volume %s to map for container %s\n", volume, event.ID)
 			}
 
