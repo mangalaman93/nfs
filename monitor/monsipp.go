@@ -221,7 +221,7 @@ func (v *Volume) tailUDP(influxchan chan *influxdb.Point, pid int) {
 			log.Println("[WARN] unable to convert tx queue size,", err)
 		} else {
 			influxchan <- &influxdb.Point{
-				Measurement: "udp_txqueue",
+				Measurement: "txqueue_udp",
 				Tags: map[string]string{
 					"container_name": v.cont,
 				},
@@ -237,7 +237,7 @@ func (v *Volume) tailUDP(influxchan chan *influxdb.Point, pid int) {
 			log.Println("[WARN] unable to convert rx queue size,", err)
 		} else {
 			influxchan <- &influxdb.Point{
-				Measurement: "udp_rxqueue",
+				Measurement: "rxqueue_udp",
 				Tags: map[string]string{
 					"container_name": v.cont,
 				},
@@ -253,7 +253,7 @@ func (v *Volume) tailUDP(influxchan chan *influxdb.Point, pid int) {
 			log.Println("[WARN] unable to convert number of drops,", err)
 		} else {
 			influxchan <- &influxdb.Point{
-				Measurement: "udp_drops",
+				Measurement: "drops_udp",
 				Tags: map[string]string{
 					"container_name": v.cont,
 				},
