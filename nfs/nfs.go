@@ -1,11 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"log"
-	"net"
+	"net/http"
 	"os"
 	"syscall"
 )
@@ -18,6 +17,15 @@ import (
 const (
 	LOG_FILE = "nfs.log"
 )
+
+func writeHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func defaultHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("[WARN] unexpected request:", r)
+	w.WriteHeader(http.StatusNoContent)
+}
 
 func parseArgs(daemonize *bool, port *string) {
 	flag.BoolVar(daemonize, "d", false, "daemonize")
@@ -63,33 +71,7 @@ func main() {
 
 	log.SetFlags(log.LstdFlags)
 	log.Println("#################### BEGIN OF LOG ##########################")
-
-	// listening to incoming connections
-	conn, err := net.Listen("tcp", ":"+port)
-	if err != nil {
-		log.Fatalln("[ERROR] listening:", err)
-	}
-	defer conn.Close()
-	log.Println("[_INFO] listening on", port)
-
-	for {
-		client, err := conn.Accept()
-		if err != nil {
-			log.Println("[_WARN] error accepting: ", err.Error())
-			continue
-		}
-		log.Printf("[_INFO] Received request from %s\n", client.RemoteAddr())
-
-		reader := bufio.NewReader(client)
-		line, isPrefix, err := reader.ReadLine()
-		for err == nil && !isPrefix {
-			log.Println(string(line))
-			line, isPrefix, err = reader.ReadLine()
-		}
-		if isPrefix {
-			log.Println("buffer size is too small!")
-		} else {
-			log.Println(err)
-		}
-	}
+	http.HandleFunc("/", defaultHandler)
+	http.HandleFunc("/write", writeHandler)
+	http.ListenAndServe(":"+port, nil)
 }
