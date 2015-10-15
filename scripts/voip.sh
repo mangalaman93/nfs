@@ -9,6 +9,7 @@ fi
 # hosts
 CUR_HOST=jedi054
 OTH_HOST=jedi055
+OVS_BRIDGE=br-int
 
 # default options
 IS_SNORT=true
@@ -21,6 +22,10 @@ NUM_SIPP=3
 source ~/devstack/openrc admin
 # influxdb config
 source ~/nfs/.influxdb.config
+
+set_controller() {
+  sudo ovs-vsctl set-controller ${OVS_BRIDGE} "tcp:${CUR_HOST}:6633"
+}
 
 # finds ip address given id of nova instance! $1 -> id
 # ip address is stored in OUT_IP variable after return
