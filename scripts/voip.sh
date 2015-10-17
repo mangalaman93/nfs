@@ -22,6 +22,9 @@ NUM_SIPP=3
 source ~/devstack/openrc admin
 # influxdb config
 source ~/nfs/.influxdb.config
+# maximum limit on read buffer size
+sudo sysctl -w net.core.rmem_max=26214400
+BUFF_SIZE=1048576
 
 set_controller() {
   sudo ovs-vsctl set-controller ${OVS_BRIDGE} "tcp:${CUR_HOST}:6633"
@@ -149,7 +152,7 @@ start_exp_on_cur() {
   # run sipp servers
   for (( i = 0; i < $NUM_SIPP; i++ )); do
     echo "running sipp-server$i"
-    nova boot --image mangalaman93/sipp --meta ARGS="-sn uas" --availability-zone regionOne:$HOST_SIPP_SERVER --flavor c1.small "sipp-server$i" > /dev/null
+    nova boot --image mangalaman93/sipp --meta ARGS="-buff_size $BUFF_SIZE -sn uas" --availability-zone regionOne:$HOST_SIPP_SERVER --flavor c1.tiny "sipp-server$i" > /dev/null
     sleep 3
     check_host "sipp-server$i" $HOST_SIPP_SERVER
     find_ip "sipp-server$i"
@@ -160,7 +163,7 @@ start_exp_on_cur() {
   # run snort
   if [[ "$IS_SNORT" == "true" ]]; then
     echo "running snort"
-    nova boot --image mangalaman93/snort --meta OPT_CAP_ADD=NET_ADMIN --availability-zone regionOne:$HOST_SNORT --flavor c1.tiny snort > /dev/null
+    nova boot --image mangalaman93/snort --meta OPT_CAP_ADD=NET_ADMIN --availability-zone regionOne:$HOST_SNORT --flavor c1.small snort > /dev/null
     sleep 3
     check_host snort $HOST_SNORT
     find_ip snort
@@ -171,7 +174,7 @@ start_exp_on_cur() {
   # run sipp-clients
   for (( i = 0; i < $NUM_SIPP; i++ )); do
     echo "running sipp-client$i"
-    nova boot --image mangalaman93/sipp --meta ARGS="-sn uac ${SERVER_IP[$i]}:5060" --availability-zone regionOne:$HOST_SIPP_CLIENT --flavor c1.small "sipp-client$i" > /dev/null
+    nova boot --image mangalaman93/sipp --meta ARGS="-buff_size $BUFF_SIZE -sn uac ${SERVER_IP[$i]}:5060" --availability-zone regionOne:$HOST_SIPP_CLIENT --flavor c1.tiny "sipp-client$i" > /dev/null
     sleep 3
     check_host "sipp-client$i" $HOST_SIPP_CLIENT
     find_ip "sipp-client$i"
