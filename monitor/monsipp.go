@@ -34,8 +34,9 @@ const (
 	MAX_LINE_LENGTH     = 3000
 	NET_BUFFER_SIZE     = 1000
 	INFLUXDB_BATCH_SIZE = 50
-	UDP_QUEUE_FREQ      = 500
+	FILE_READ_PERIOD    = 500
 	SIPP_UDP_PORT       = 5060
+	IMAGE_SNORT         = "mangalaman93/snort"
 )
 
 var MEASUREMENTS = map[int]string{
@@ -64,9 +65,165 @@ type Volume struct {
 	wg       sync.WaitGroup
 }
 
+type Snort struct {
+	pid      int
+	cont     string
+	stopchan chan bool
+	waitchan chan bool
+}
+
 var machine_name string
 var clients []*influxdb.Client
 var sippvols = map[string]*Volume{}
+var snorts = map[string]*Snort{}
+
+func (s *Snort) String() string {
+	return fmt.Sprintf("{pid:%s, cont:%s}", s.pid, s.cont)
+}
+
+func (s *Snort) StopTail() {
+	close(s.stopchan)
+	<-s.waitchan
+}
+
+func (s *Snort) TailQueue(influxchan chan *influxdb.Point) {
+	// wait for queue to be created
+	time.Sleep(2000 * time.Millisecond)
+
+	// check whether the file exists
+	netfilter_file := path.Join("/proc/", strconv.Itoa(s.pid), "/net/netfilter/nfnetlink_queue")
+	if _, err := os.Stat(netfilter_file); err != nil {
+		log.Printf("[ERROR] %s file not found!\n", netfilter_file)
+		panic(err)
+	}
+
+	// check whether the dev file exists
+	dev_file := path.Join("/proc/", strconv.Itoa(s.pid), "/net/dev")
+	if _, err := os.Stat(dev_file); err != nil {
+		log.Printf("[ERROR] %s file not found!\n", dev_file)
+		panic(err)
+	}
+
+	defer close(s.waitchan)
+	for {
+		select {
+		case <-s.stopchan:
+			log.Println("[INFO] exiting tailQueue for container", s.cont)
+			return
+		default:
+			time.Sleep(time.Duration(FILE_READ_PERIOD) * time.Millisecond)
+		}
+
+		out, err := ioutil.ReadFile(netfilter_file)
+		curtime := time.Now()
+		if err != nil {
+			log.Println("[WARN] unable to read netfilter file:", err)
+			return
+		}
+
+		row := strings.Fields(string(out))
+		if len(row) < 9 {
+			log.Println("[WARN] incorrect parsing of netfilter file, parsed line:", row)
+			continue
+		}
+
+		drops, err := strconv.ParseInt(row[5], 10, 64)
+		if err != nil {
+			log.Println("[WARN] unable to convert number of queue drops,", err)
+		} else {
+			influxchan <- &influxdb.Point{
+				Measurement: "snort_queue_drops",
+				Tags: map[string]string{
+					"container_name": s.cont,
+				},
+				Fields: map[string]interface{}{
+					"value": drops,
+				},
+				Time: curtime,
+			}
+		}
+
+		drops, err = strconv.ParseInt(row[6], 10, 64)
+		if err != nil {
+			log.Println("[WARN] unable to convert number of user drops,", err)
+		} else {
+			influxchan <- &influxdb.Point{
+				Measurement: "snort_user_drops",
+				Tags: map[string]string{
+					"container_name": s.cont,
+				},
+				Fields: map[string]interface{}{
+					"value": drops,
+				},
+				Time: curtime,
+			}
+		}
+
+		// dev file
+		out, err = ioutil.ReadFile(dev_file)
+		curtime = time.Now()
+		if err != nil {
+			log.Println("[WARN] unable to read dev file:", err)
+			return
+		}
+
+		rows := strings.Split(string(out), "\n")
+		if len(rows) < 4 {
+			log.Println("[WARN] incorrect number of lines in dev file for container", s.cont)
+			continue
+		}
+
+		index := 3
+		if strings.Contains(rows[2], "lo") {
+			if strings.Contains(rows[3], "lo") {
+				log.Println("[WARN] unable to find correct network interface for container", s.cont)
+				continue
+			}
+		} else {
+			index = 2
+		}
+
+		row = strings.Fields(rows[index])
+		if len(row) < 17 {
+			log.Println("[WARN] incorrect parsing of dev file, parsed line:", row)
+			continue
+		}
+
+		rx_packets, err := strconv.ParseInt(row[2], 10, 64)
+		if err != nil {
+			log.Println("[WARN] unable to convert number of received packets,", err)
+		} else {
+			influxchan <- &influxdb.Point{
+				Measurement: "rx_packets",
+				Tags: map[string]string{
+					"container_name": s.cont,
+				},
+				Fields: map[string]interface{}{
+					"value": rx_packets,
+				},
+				Time: curtime,
+			}
+		}
+
+		tx_packets, err := strconv.ParseInt(row[10], 10, 64)
+		if err != nil {
+			log.Println("[WARN] unable to convert number of tx packets,", err)
+		} else {
+			influxchan <- &influxdb.Point{
+				Measurement: "tx_packets",
+				Tags: map[string]string{
+					"container_name": s.cont,
+				},
+				Fields: map[string]interface{}{
+					"value": tx_packets,
+				},
+				Time: curtime,
+			}
+		}
+	}
+
+	log.Println("[INFO] exiting tailQueue for container", s.cont)
+}
 
 func (v *Volume) String() string {
 	return fmt.Sprintf("{id:%s, cont:%s, rtt:%s, stat:%s}", v.id, v.cont, v.rtt, v.stat)
@@ -180,7 +337,7 @@ func (v *Volume) tailUDP(influxchan chan *influxdb.Point, pid int) {
 			log.Println("[INFO] exiting tailUDP for container", v.cont)
 			return
 		default:
-			time.Sleep(time.Duration(UDP_QUEUE_FREQ) * time.Millisecond)
+			time.Sleep(time.Duration(FILE_READ_PERIOD) * time.Millisecond)
 		}
 
 		out, err := ioutil.ReadFile(udp_file)
@@ -333,6 +490,10 @@ func cleanupVolumes() {
 		v.StopTail()
 	}
 
+	for _, s := range snorts {
+		s.StopTail()
+	}
+
 	log.Println("[INFO] cleanup done, exiting!")
 }
 
@@ -434,6 +595,23 @@ func dockerListener(docker *dockerclient.Client, dokchan chan *dockerclient.APIE
 				sippvols[event.ID] = v
 				go v.Tail(influxchan, cont.State.Pid)
 				log.Printf("[INFO] add volume %s to map for container %s\n", volume, event.ID)
+			} else if event.From == IMAGE_SNORT {
+				cont, err := docker.InspectContainer(event.ID)
+				if err != nil {
+					log.Println("[WARN] unable to inspect container ", event.ID)
+					continue
+				}
+
+				s := &Snort{
+					pid:      cont.State.Pid,
+					cont:     cont.Name[1:],
+					stopchan: make(chan bool),
+					waitchan: make(chan bool),
+				}
+
+				snorts[event.ID] = s
+				go s.TailQueue(influxchan)
+				log.Printf("[INFO] add into tail list container %s\n", event.ID)
 			}
 
 		case "die", "kill", "stop":
