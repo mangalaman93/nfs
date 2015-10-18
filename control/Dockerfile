@@ -19,7 +19,7 @@ RUN pip install bitarray \
 RUN git clone http://github.com/noxrepo/pox
 
 # install pyretic
-RUN git clone http://github.com/frenetic-lang/pyretic.git
+RUN git clone http://github.com/mangalaman93/pyretic.git
 
 # setting up path
 ENV PATH /pox/:/pyretic/:$PATH
