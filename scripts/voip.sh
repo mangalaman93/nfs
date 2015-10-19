@@ -107,6 +107,7 @@ set_switch_routes() {
       exit 1
     fi
   done
+  echo "routes set up!"
 }
 
 start_exp_on_cur() {
@@ -269,14 +270,13 @@ start_exp_on_oth() {
     stop_exp
     exit 1
   fi
-
-  set_switch_routes 0
 }
 
 case $1 in
   "start")
     # maximum limit on read buffer size
     sudo sysctl -w net.core.rmem_max=26214400
+    # sudo sysctl -w net.bridge.bridge-nf-call-iptables=0
 
     if [ "$#" -gt 1 ]; then
       if [ "$#" -lt 6 ]; then
@@ -304,7 +304,6 @@ case $1 in
       $OTH_HOST)
         start_exp_on_oth
         sudo iptables -F
-        sudo sysctl -w net.bridge.bridge-nf-call-iptables=0
         ;;
       *)
         echo "Error: Unknown host!"
