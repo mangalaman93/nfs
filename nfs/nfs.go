@@ -24,19 +24,25 @@ const (
 )
 
 // state
-var snort_queue_drops_count int = 0
-var snort_user_drops_count int = 0
+type State struct {
+	snort_queue_drops_count int
+	snort_user_drops_count  int
+}
+
+var states = map[string]State{}
 
 const (
 	MAX_COUNT = 10
 )
 
 func checkState() {
-	if snort_queue_drops_count > MAX_COUNT || snort_user_drops_count > MAX_COUNT {
-		// migrate a client to another snort
-		snort_queue_drops_count = -1 * MAX_COUNT
-		snort_user_drops_count = -1 * MAX_COUNT
-		log.Println("[INFO] migration invoked!")
+	for id, s := range states {
+		if s.snort_queue_drops_count > MAX_COUNT || s.snort_user_drops_count > MAX_COUNT {
+			// migrate a client to another snort
+			s.snort_queue_drops_count = -1 * MAX_COUNT
+			s.snort_user_drops_count = -1 * MAX_COUNT
+			log.Printf("[INFO] migration invoked! %s is having packet dropped\n", id)
+		}
 	}
 }
 
@@ -45,26 +51,42 @@ func updateState(points models.Points) {
 		switch point.Name() {
 		case "snort_queue_drops":
 			v, ok := point.Fields()["value"].(int64)
-			if ok {
-				if v > 0 {
-					snort_queue_drops_count += 1
-				} else {
-					snort_queue_drops_count = 0
-				}
-			} else {
+			if !ok {
 				log.Println("[WARN] unknown data type!")
+				continue
+			}
+
+			cont := point.Tags()["container_name"]
+			s, ok := states[cont]
+			if !ok {
+				states[cont] = State{}
+				s = states[cont]
+			}
+
+			if v > 0 {
+				s.snort_queue_drops_count += 1
+			} else {
+				s.snort_queue_drops_count = 0
 			}
 			break
 		case "snort_user_drops":
 			v, ok := point.Fields()["value"].(int64)
-			if ok {
-				if v > 0 {
-					snort_user_drops_count += 1
-				} else {
-					snort_user_drops_count = 0
-				}
-			} else {
+			if !ok {
 				log.Println("[WARN] unknown data type!")
+				continue
+			}
+
+			cont := point.Tags()["container_name"]
+			s, ok := states[cont]
+			if !ok {
+				states[cont] = State{}
+				s = states[cont]
+			}
+
+			if v > 0 {
+				s.snort_user_drops_count += 1
+			} else {
+				s.snort_user_drops_count = 0
 			}
 			break
 		}
