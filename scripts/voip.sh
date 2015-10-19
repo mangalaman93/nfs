@@ -9,26 +9,23 @@ fi
 # hosts
 CUR_HOST=jedi054
 OTH_HOST=jedi055
-OVS_BRIDGE=br-int
+CUR_HOST_IP=10.1.21.14
+NFS_PORT=8084
+SIPP_BUFF_SIZE=1048576
+ROUTE_SH=route
 
 # default options
 IS_SNORT=true
 HOST_SIPP_CLIENT=$CUR_HOST
 HOST_SIPP_SERVER=$CUR_HOST
 HOST_SNORT=$CUR_HOST
-NUM_SIPP=3
+NUM_SIPP=5
+NUM_SNORT=2
 
 # get openstack environment variables
 source ~/devstack/openrc admin
 # influxdb config
 source ~/nfs/.influxdb.config
-# maximum limit on read buffer size
-sudo sysctl -w net.core.rmem_max=26214400
-BUFF_SIZE=1048576
-
-set_controller() {
-  sudo ovs-vsctl set-controller ${OVS_BRIDGE} "tcp:${CUR_HOST}:6633"
-}
 
 # finds ip address given id of nova instance! $1 -> id
 # ip address is stored in OUT_IP variable after return
@@ -46,16 +43,21 @@ stop_exp() {
   docker kill $HOST-cadvisor &>/dev/null
   docker rm $HOST-cadvisor &>/dev/null
 
+  echo "stop nfs"
+  sudo kill $(pidof nfs) &>/dev/null
+
   echo "stop monsipp"
   sudo kill $(pidof monsipp) &>/dev/null
 
   echo "delete containers"
-  nova delete snort &>/dev/null
+  for (( i = 0; i < $NUM_SNORT; i++ )); do
+    nova delete "snort$i" &>/dev/null
+  done
   for (( i = 0; i < $NUM_SIPP; i++ )); do
     nova delete "sipp-client$i" "sipp-server$i" &>/dev/null
   done
 
-  echo "delete volumes yourselves!!!"
+  echo "NOT deleting volumes!!!"
   echo "cleanup done!"
 }
 
@@ -88,39 +90,20 @@ err_if_not_running() {
   fi
 }
 
-set_routes() {
+# $1 -> snort instance index
+set_switch_routes() {
   if [[ "$IS_SNORT" != "true" ]]; then
     return
   fi
 
-  THIS_HOST=$(hostname)
   for (( i = 0; i < $NUM_SIPP; i++ )); do
-    find_ip "sipp-server$i"
-    SERVER_IP[$i]=$OUT_IP
+    ./${ROUTE_SH} "sipp-client$i" "snort$1" "sipp-server$i"
+    if [[ $? -ne 0 ]]; then
+      echo "Error setting up routes"
+      stop_exp
+      exit 1
+    fi
   done
-  find_ip snort
-  ROUTER_IP=$OUT_IP
-
-  echo "setting up routes"
-  if [[ "$HOST_SIPP_CLIENT" == "$THIS_HOST" ]]; then
-    for (( i = 0; i < $NUM_SIPP; i++ )); do
-      CLIENT_ID=$(nova show sipp-client$i | grep "| id" | awk '{print $4}')
-      FULL_CLIENT_DOCKER_ID=$(docker inspect --format '{{ .Id }}' sipp-client$i-$CLIENT_ID)
-      sudo ip netns exec $FULL_CLIENT_DOCKER_ID ip route add ${SERVER_IP[$i]} via $ROUTER_IP
-    done
-  fi
-
-  if [[ "$HOST_SNORT" == "$THIS_HOST" ]]; then
-    SNORT_ID=$(nova show snort | grep "| id" | awk '{print $4}')
-    FULL_SNORT_DOCKER_ID=$(docker inspect --format '{{ .Id }}' snort-$SNORT_ID)
-    for (( i = 0; i < $NUM_SIPP; i++ )); do
-      find_ip "sipp-client$i"
-      CLIENT_IP=$OUT_IP
-      sudo ip netns exec $FULL_SNORT_DOCKER_ID iptables -t nat -A PREROUTING -d $ROUTER_IP -s $CLIENT_IP -j DNAT --to-destination ${SERVER_IP[$i]}
-      sudo ip netns exec $FULL_SNORT_DOCKER_ID iptables -t nat -I POSTROUTING -s $CLIENT_IP -j SNAT --to-source $ROUTER_IP
-      sudo ip netns exec $FULL_SNORT_DOCKER_ID iptables -A FORWARD -d ${SERVER_IP[$i]} -i eth0 -j ACCEPT
-    done
-  fi
 }
 
 start_exp_on_cur() {
@@ -136,14 +119,26 @@ start_exp_on_cur() {
     exit 1
   fi
 
+  pidof nfs &>/dev/null
+  if [[ $? -eq 0 ]]; then
+    echo "Error: nfs is already running!"
+    exit 1
+  fi
+
   for (( i = 0; i < $NUM_SIPP; i++ )); do
     err_if_running "sipp-server$i"
     err_if_running "sipp-client$i"
   done
-  err_if_running snort
+
+  for (( i = 0; i < $NUM_SNORT; i++ )); do
+    err_if_running "snort$i"
+  done
+
+  # run nfs
+  cd ~/nfs/ && ./nfs -d -p $NFS_PORT
 
   # run monsipp
-  cd ~/nfs/ && sudo ./monsipp -d $INFLUXDB_IP:$INFLUXDB_PORT:$INFLUXDB_USER:$INFLUXDB_PASS
+  cd ~/nfs/ && sudo ./monsipp -d $INFLUXDB_IP:$INFLUXDB_PORT:$INFLUXDB_USER:$INFLUXDB_PASS $CUR_HOST_IP:$NFS_PORT
 
   # wait for monsipp to start on other server
   echo -n "run the same script on $OTH_HOST and press enter"
@@ -152,7 +147,7 @@ start_exp_on_cur() {
   # run sipp servers
   for (( i = 0; i < $NUM_SIPP; i++ )); do
     echo "running sipp-server$i"
-    nova boot --image mangalaman93/sipp --meta ARGS="-buff_size $BUFF_SIZE -sn uas" --availability-zone regionOne:$HOST_SIPP_SERVER --flavor c1.tiny "sipp-server$i" > /dev/null
+    nova boot --image mangalaman93/sipp --meta ARGS="-buff_size $SIPP_BUFF_SIZE -sn uas" --availability-zone regionOne:$HOST_SIPP_SERVER --flavor c1.tiny "sipp-server$i" > /dev/null
     sleep 3
     check_host "sipp-server$i" $HOST_SIPP_SERVER
     find_ip "sipp-server$i"
@@ -162,19 +157,21 @@ start_exp_on_cur() {
 
   # run snort
   if [[ "$IS_SNORT" == "true" ]]; then
-    echo "running snort"
-    nova boot --image mangalaman93/snort --meta OPT_CAP_ADD=NET_ADMIN --availability-zone regionOne:$HOST_SNORT --flavor c1.small snort > /dev/null
-    sleep 3
-    check_host snort $HOST_SNORT
-    find_ip snort
-    ROUTER_IP=$OUT_IP
-    echo "router: $ROUTER_IP"
+    for (( i = 0; i < $NUM_SNORT; i++ )); do
+      echo "running snort$i"
+      nova boot --image mangalaman93/snort --meta OPT_CAP_ADD=NET_ADMIN --availability-zone regionOne:$HOST_SNORT --flavor c1.small "snort$i" > /dev/null
+      sleep 3
+      check_host "snort$i" $HOST_SNORT
+      find_ip "snort$i"
+      ROUTER_IP=$OUT_IP
+      echo "router$i: $ROUTER_IP"
+    done
   fi
 
   # run sipp-clients
   for (( i = 0; i < $NUM_SIPP; i++ )); do
     echo "running sipp-client$i"
-    nova boot --image mangalaman93/sipp --meta ARGS="-buff_size $BUFF_SIZE -sn uac ${SERVER_IP[$i]}:5060" --availability-zone regionOne:$HOST_SIPP_CLIENT --flavor c1.tiny "sipp-client$i" > /dev/null
+    nova boot --image mangalaman93/sipp --meta ARGS="-buff_size $SIPP_BUFF_SIZE -sn uac ${SERVER_IP[$i]}:5060" --availability-zone regionOne:$HOST_SIPP_CLIENT --flavor c1.tiny "sipp-client$i" > /dev/null
     sleep 3
     check_host "sipp-client$i" $HOST_SIPP_CLIENT
     find_ip "sipp-client$i"
@@ -200,16 +197,25 @@ start_exp_on_cur() {
     exit 1
   fi
 
+  pidof nfs &>/dev/null
+  if [[ $? -ne 0 ]]; then
+    echo "Error: nfs did not run!"
+    stop_exp
+    exit 1
+  fi
+
   for (( i = 0; i < $NUM_SIPP; i++ )); do
     err_if_not_running "sipp-server$i"
     err_if_not_running "sipp-client$i"
   done
 
   if [[ "$IS_SNORT" == "true" ]]; then
-    err_if_not_running snort
+    for (( i = 0; i < $NUM_SNORT; i++ )); do
+      err_if_not_running "snort$i"
+    done
   fi
 
-  set_routes
+  set_switch_routes 0
 }
 
 start_exp_on_oth() {
@@ -238,7 +244,9 @@ start_exp_on_oth() {
   done
 
   if [[ "$IS_SNORT" == "true" ]]; then
-    err_if_not_running snort
+    for (( i = 0; i < $NUM_SNORT; i++ )); do
+      err_if_not_running "snort$i"
+    done
   fi
 
   # run cadvisor
@@ -259,15 +267,18 @@ start_exp_on_oth() {
     exit 1
   fi
 
-  set_routes
+  set_switch_routes 0
 }
 
 case $1 in
   "start")
+    # maximum limit on read buffer size
+    sudo sysctl -w net.core.rmem_max=26214400
+
     if [ "$#" -gt 1 ]; then
-      if [ "$#" -lt 5 ]; then
+      if [ "$#" -lt 6 ]; then
         echo "error!"
-        echo "Usage: $0 start host_[client server snort(false)] [num_sipp]" >&2
+        echo "Usage: $0 start host_[client server snort(false)] [num_sipp] [num_snort]" >&2
         exit 1
       else
         HOST_SIPP_CLIENT=$2
@@ -279,6 +290,7 @@ case $1 in
           HOST_SNORT=$4
         fi
         NUM_SIPP=$5
+        NUM_SNORT=$6
       fi
     fi
     case $(hostname) in
@@ -299,12 +311,13 @@ case $1 in
     ;;
   "stop")
     if [ "$#" -gt 1 ]; then
-      if [ "$#" -gt 2 ]; then
+      if [ "$#" -gt 3 ]; then
         echo "error!"
-        echo "Usage: $0 stop [num_sipp]" >&2
+        echo "Usage: $0 stop [num_sipp] [num_snort]" >&2
         exit 1
       else
         NUM_SIPP=$2
+        NUM_SNORT=$3
       fi
     fi
     stop_exp
