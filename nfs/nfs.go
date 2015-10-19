@@ -23,6 +23,54 @@ const (
 	INFLUX_DB = "cadvisor"
 )
 
+// state
+var snort_queue_drops_count int = 0
+var snort_user_drops_count int = 0
+
+const (
+	MAX_COUNT = 10
+)
+
+func checkState() {
+	if snort_queue_drops_count > MAX_COUNT || snort_user_drops_count > MAX_COUNT {
+		// migrate a client to another snort
+		snort_queue_drops_count = -1 * MAX_COUNT
+		snort_user_drops_count = -1 * MAX_COUNT
+		log.Println("[INFO] migration invoked!")
+	}
+}
+
+func updateState(points models.Points) {
+	for _, point := range points {
+		switch point.Name() {
+		case "snort_queue_drops":
+			v, ok := point.Fields()["value"].(int64)
+			if ok {
+				if v > 0 {
+					snort_queue_drops_count += 1
+				} else {
+					snort_queue_drops_count = 0
+				}
+			} else {
+				log.Println("[WARN] unknown data type!")
+			}
+			break
+		case "snort_user_drops":
+			v, ok := point.Fields()["value"].(int64)
+			if ok {
+				if v > 0 {
+					snort_user_drops_count += 1
+				} else {
+					snort_user_drops_count = 0
+				}
+			} else {
+				log.Println("[WARN] unknown data type!")
+			}
+			break
+		}
+	}
+}
+
 func writeErr(w http.ResponseWriter, err error) {
 	w.WriteHeader(http.StatusBadRequest)
 	w.Write([]byte(err.Error()))
@@ -72,7 +120,8 @@ func writeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Println(points)
+	updateState(points)
+	checkState()
 	w.WriteHeader(http.StatusNoContent)
 }
 
