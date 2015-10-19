@@ -57,6 +57,9 @@ stop_exp() {
     nova delete "sipp-client$i" "sipp-server$i" &>/dev/null
   done
 
+  echo "deleting flow entries"
+  ./${ROUTE_SH} cleanup
+
   echo "NOT deleting volumes!!!"
   echo "cleanup done!"
 }

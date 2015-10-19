@@ -1,11 +1,5 @@
 #!/bin/bash
 
-if [ "$#" -lt 3 ]; then
-  echo "error!"
-  echo "Usage: $0 <client> <router> <server>" >&2
-  exit 1
-fi
-
 # constants
 OVS_BRIDGE=br-int
 
@@ -32,13 +26,42 @@ get_port() {
   fi
 }
 
+if [ "$#" -eq 1 ]; then
+  if [[ "$1" == "cleanup" ]]; then
+    OVS_BRIDGE=br-int
+    sudo ovs-ofctl dump-flows ${OVS_BRIDGE} | grep "priority=100" | while read -r LINE ; do
+      sudo ovs-ofctl del-flows ${OVS_BRIDGE} $(echo ${LINE} | awk -F'priority=100,' '{print $2}' | awk -F',' '{print $1}') &> /dev/null
+    done
+    echo "${OVS_BRIDGE} rules cleaned up!"
+    exit 0
+  else
+    echo "error!"
+    echo "Usage: $0 cleanup"
+    exit 1
+  fi
+fi
+
+if [ "$#" -lt 3 ]; then
+  echo "error!"
+  echo "Usage: $0 <client> <router> <server>" >&2
+  exit 1
+fi
+
+# client
 get_mac $1
 CLIENT_MAC=${OUT_MAC}
+get_port $1
+CLIENT_PORT=${OUT_PORT}
+# router
 get_mac $2
 ROUTER_MAC=${OUT_MAC}
+get_port $2
+ROUTER_PORT=${OUT_PORT}
+# server
 get_mac $3
 SERVER_MAC=${OUT_MAC}
-get_port $2
+# commands
 sudo ovs-ofctl del-flows ${OVS_BRIDGE} dl_src=${CLIENT_MAC},dl_dst=${SERVER_MAC} &>/dev/null
-sudo ovs-ofctl add-flow ${OVS_BRIDGE} priority=100,dl_src=${CLIENT_MAC},dl_dst=${SERVER_MAC},actions=mod_dl_dst=${ROUTER_MAC},output:${OUT_PORT} &>/dev/null
+sudo ovs-ofctl add-flow ${OVS_BRIDGE} priority=100,dl_src=${CLIENT_MAC}/ff:ff:ff:ff:ff:ff,dl_dst=${SERVER_MAC}/ff:ff:ff:ff:ff:ff,actions=mod_dl_dst=${ROUTER_MAC},output:${ROUTER_PORT} &>/dev/null
+sudo ovs-ofctl add-flow ${OVS_BRIDGE} priority=100,dl_src=${SERVER_MAC}/ff:ff:ff:ff:ff:ff,dl_dst=${CLIENT_MAC}/ff:ff:ff:ff:ff:ff,actions=output:${CLIENT_PORT} &>/dev/null
 exit
