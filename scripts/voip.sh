@@ -236,7 +236,7 @@ start_exp_on_oth() {
   fi
 
   # run monsipp
-  cd ~/nfs/ && sudo ./monsipp -d $INFLUXDB_IP:$INFLUXDB_PORT:$INFLUXDB_USER:$INFLUXDB_PASS
+  cd ~/nfs/ && sudo ./monsipp -d $INFLUXDB_IP:$INFLUXDB_PORT:$INFLUXDB_USER:$INFLUXDB_PASS $CUR_HOST_IP:$NFS_PORT
 
   # wait for containers to start
   echo -n "press enter when script is done running on $CUR_HOST"
