@@ -127,6 +127,22 @@ func (s *Snort) TailQueue(influxchan chan *influxdb.Point) {
 			continue
 		}
 
+		length, err := strconv.ParseInt(row[2], 10, 64)
+		if err != nil {
+			log.Println("[WARN] unable to convert queue length,", err)
+		} else {
+			influxchan <- &influxdb.Point{
+				Measurement: "snort_queue_length",
+				Tags: map[string]string{
+					"container_name": s.cont,
+				},
+				Fields: map[string]interface{}{
+					"value": length,
+				},
+				Time: curtime,
+			}
+		}
+
 		drops, err := strconv.ParseInt(row[5], 10, 64)
 		if err != nil {
 			log.Println("[WARN] unable to convert number of queue drops,", err)
