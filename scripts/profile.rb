@@ -8,6 +8,11 @@ metrics = ["cpu_usage_total", "rx_bytes", "tx_bytes", "rxqueue_udp", "response_t
 select_str = ["derivative(value)/10000000", "derivative(value)", "derivative(value)", "mean(value)", "mean(value)", "mean(value)"]
 value_str = ["", "derivative", "derivative", "mean", "mean", "mean"]
 
+# for snort
+# metrics = ["cpu_usage_total", "memory_usage", "rx_bytes", "tx_bytes", "rx_packets", "tx_packets", "snort_queue_length", "snort_queue_drops", "snort_user_drops"]
+# select_str = ["derivative(value)/10000000", "mean(value)", "derivative(value)", "derivative(value)", "derivative(value)", "derivative(value)", "mean(value)", "mean(value)", "mean(value)"]
+# value_str = ["", "mean", "derivative", "derivative", "derivative", "derivative", "mean", "mean", "mean"]
+
 Flags.define_string(:ip, "0.0.0.0", "server ip")
 Flags.define_int(:port, 8086, "port")
 Flags.define_string(:user, "root", "username")
