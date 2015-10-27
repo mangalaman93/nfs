@@ -9,8 +9,6 @@ fi
 # hosts
 CUR_HOST=jedi054
 OTH_HOST=jedi055
-CUR_HOST_IP=10.1.21.14
-NFS_PORT=8084
 SIPP_BUFF_SIZE=1048576
 ROUTE_SH=route
 
@@ -43,15 +41,12 @@ stop_exp() {
   docker kill $HOST-cadvisor &>/dev/null
   docker rm $HOST-cadvisor &>/dev/null
 
-  echo "stop nfs"
-  sudo kill $(pidof nfs) &>/dev/null
-
   echo "stop monsipp"
   sudo kill $(pidof monsipp) &>/dev/null
 
   echo "delete containers"
   for (( i = 0; i < $NUM_SNORT; i++ )); do
-    nova delete "snort$i" &>/dev/null
+    nova delete "suricata$i" &>/dev/null
   done
   for (( i = 0; i < $NUM_SIPP; i++ )); do
     nova delete "sipp-client$i" "sipp-server$i" &>/dev/null
@@ -93,14 +88,14 @@ err_if_not_running() {
   fi
 }
 
-# $1 -> snort instance index
+# $1 -> suricata instance index
 set_switch_routes() {
   if [[ "$IS_SNORT" != "true" ]]; then
     return
   fi
 
   for (( i = 0; i < $NUM_SIPP; i++ )); do
-    ./${ROUTE_SH} "sipp-client$i" "snort$1" "sipp-server$i"
+    ./${ROUTE_SH} "sipp-client$i" "suricata$1" "sipp-server$i"
     if [[ $? -ne 0 ]]; then
       echo "Error setting up routes"
       stop_exp
@@ -123,26 +118,17 @@ start_exp_on_cur() {
     exit 1
   fi
 
-  pidof nfs &>/dev/null
-  if [[ $? -eq 0 ]]; then
-    echo "Error: nfs is already running!"
-    exit 1
-  fi
-
   for (( i = 0; i < $NUM_SIPP; i++ )); do
     err_if_running "sipp-server$i"
     err_if_running "sipp-client$i"
   done
 
   for (( i = 0; i < $NUM_SNORT; i++ )); do
-    err_if_running "snort$i"
+    err_if_running "suricata$i"
   done
 
-  # run nfs
-  cd ~/nfs/ && ./nfs -d -p $NFS_PORT
-
   # run monsipp
-  cd ~/nfs/ && sudo ./monsipp -d $INFLUXDB_IP:$INFLUXDB_PORT:$INFLUXDB_USER:$INFLUXDB_PASS $CUR_HOST_IP:$NFS_PORT
+  cd ~/nfs/ && sudo ./monsipp -d $INFLUXDB_IP:$INFLUXDB_PORT:$INFLUXDB_USER:$INFLUXDB_PASS
 
   # wait for monsipp to start on other server
   echo -n "run the same script on $OTH_HOST and press enter"
@@ -159,14 +145,14 @@ start_exp_on_cur() {
     echo "server$i: ${SERVER_IP[$i]}"
   done
 
-  # run snort
+  # run suricata
   if [[ "$IS_SNORT" == "true" ]]; then
     for (( i = 0; i < $NUM_SNORT; i++ )); do
-      echo "running snort$i"
-      nova boot --image mangalaman93/snort --meta OPT_CAP_ADD=NET_ADMIN --availability-zone regionOne:$HOST_SNORT --flavor c1.small "snort$i" > /dev/null
+      echo "running suricata$i"
+      nova boot --image mangalaman93/suricata --meta OPT_CAP_ADD=NET_ADMIN --availability-zone regionOne:$HOST_SNORT --flavor c1.small "suricata$i" > /dev/null
       sleep 3
-      check_host "snort$i" $HOST_SNORT
-      find_ip "snort$i"
+      check_host "suricata$i" $HOST_SNORT
+      find_ip "suricata$i"
       ROUTER_IP=$OUT_IP
       echo "router$i: $ROUTER_IP"
     done
@@ -175,7 +161,7 @@ start_exp_on_cur() {
   # run sipp-clients
   for (( i = 0; i < $NUM_SIPP; i++ )); do
     echo "running sipp-client$i"
-    nova boot --image mangalaman93/sipp --meta ARGS="-buff_size $SIPP_BUFF_SIZE -sn uac ${SERVER_IP[$i]}:5060" --availability-zone regionOne:$HOST_SIPP_CLIENT --flavor c1.tiny "sipp-client$i" > /dev/null
+    nova boot --image mangalaman93/sipp --meta ARGS="-buff_size $SIPP_BUFF_SIZE -sn uac -r 0 ${SERVER_IP[$i]}:5060" --availability-zone regionOne:$HOST_SIPP_CLIENT --flavor c1.tiny "sipp-client$i" > /dev/null
     sleep 3
     check_host "sipp-client$i" $HOST_SIPP_CLIENT
     find_ip "sipp-client$i"
@@ -201,13 +187,6 @@ start_exp_on_cur() {
     exit 1
   fi
 
-  pidof nfs &>/dev/null
-  if [[ $? -ne 0 ]]; then
-    echo "Error: nfs did not run!"
-    stop_exp
-    exit 1
-  fi
-
   for (( i = 0; i < $NUM_SIPP; i++ )); do
     err_if_not_running "sipp-server$i"
     err_if_not_running "sipp-client$i"
@@ -215,7 +194,7 @@ start_exp_on_cur() {
 
   if [[ "$IS_SNORT" == "true" ]]; then
     for (( i = 0; i < $NUM_SNORT; i++ )); do
-      err_if_not_running "snort$i"
+      err_if_not_running "suricata$i"
     done
   fi
 
@@ -236,7 +215,7 @@ start_exp_on_oth() {
   fi
 
   # run monsipp
-  cd ~/nfs/ && sudo ./monsipp -d $INFLUXDB_IP:$INFLUXDB_PORT:$INFLUXDB_USER:$INFLUXDB_PASS $CUR_HOST_IP:$NFS_PORT
+  cd ~/nfs/ && sudo ./monsipp -d $INFLUXDB_IP:$INFLUXDB_PORT:$INFLUXDB_USER:$INFLUXDB_PASS
 
   # wait for containers to start
   echo -n "press enter when script is done running on $CUR_HOST"
@@ -249,7 +228,7 @@ start_exp_on_oth() {
 
   if [[ "$IS_SNORT" == "true" ]]; then
     for (( i = 0; i < $NUM_SNORT; i++ )); do
-      err_if_not_running "snort$i"
+      err_if_not_running "suricata$i"
     done
   fi
 
@@ -281,7 +260,7 @@ case $1 in
     if [ "$#" -gt 1 ]; then
       if [ "$#" -lt 6 ]; then
         echo "error!"
-        echo "Usage: $0 start host_[client server snort(false)] [num_sipp] [num_snort]" >&2
+        echo "Usage: $0 start host_[client server suricata(false)] [num_sipp] [num_suricata]" >&2
         exit 1
       else
         HOST_SIPP_CLIENT=$2
@@ -315,7 +294,7 @@ case $1 in
     if [ "$#" -gt 1 ]; then
       if [ "$#" -gt 3 ]; then
         echo "error!"
-        echo "Usage: $0 stop [num_sipp] [num_snort]" >&2
+        echo "Usage: $0 stop [num_sipp] [num_suricata]" >&2
         exit 1
       else
         NUM_SIPP=$2
