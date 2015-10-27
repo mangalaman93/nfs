@@ -36,7 +36,7 @@ const (
 	INFLUXDB_BATCH_SIZE = 50
 	FILE_READ_PERIOD    = 500
 	SIPP_UDP_PORT       = 5060
-	IMAGE_SNORT         = "mangalaman93/snort"
+	IMAGE_SNORT         = "mangalaman93/suricata"
 )
 
 var MEASUREMENTS = map[int]string{
