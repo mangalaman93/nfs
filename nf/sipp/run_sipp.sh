@@ -18,5 +18,5 @@ if [[ -z $IF ]]; then
 	exit 1
 fi
 
-cd /data && sipp -bg -trace_stat -fd 1s -trace_rtt -rtt_freq 1 -trace_logs -trace_err -i $IF $ARGS
+cd /data && sipp -bg -trace_stat -fd 5s -trace_rtt -rtt_freq 1000 -trace_logs -trace_err -i $IF $ARGS
 tail -f /dev/null
