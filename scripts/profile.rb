@@ -99,7 +99,7 @@ metrics.each { |m|
 
 # calculate averages for each interval
 timestamps.each_with_index { |t, i|
-  if i == (timestamps.length-2)
+  if i == (timestamps.length-1)
     break
   end
 
