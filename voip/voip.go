@@ -69,7 +69,11 @@ func accept() {
 			var cmd Command
 			switch dec.Decode(&cmd) {
 			case nil:
-				response := handleCommand(cmd)
+				response, err := handleCommand(cmd)
+				if err != nil {
+					log.Println("[WARN] error in handling voip command:", err)
+				}
+
 				err = enc.Encode(response)
 				if err != nil {
 					log.Println("[WARN] error in sending voip data:", err)
