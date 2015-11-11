@@ -17,13 +17,14 @@ const (
 
 var sdata State
 
-func Listen(port string) {
+func Listen(port string) error {
 	// register handlers for collecting data over line protocol
 	http.HandleFunc("/", defaultHandler)
 	http.HandleFunc("/write", writeHandler)
 
 	// start listening until ctrl+c
 	go http.ListenAndServe(":"+port, nil)
+	return nil
 }
 
 func Stop() {

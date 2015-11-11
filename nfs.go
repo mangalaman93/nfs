@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	LOG_FILE = "nfs.log"
+	LOG_FILE  = "nfs.log"
+	UNIX_SOCK = "nfs.sock"
 )
 
 func parseArgs(daemonize *bool, port *string) {
@@ -67,12 +68,22 @@ func main() {
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	log.Println("[INFO] adding signal handler for SIGTERM")
 
-	// loops
-	nfsmain.Listen(port)
-	voip.Listen()
+	// control loop
+	if err := nfsmain.Listen(port); err != nil {
+		log.Fatalln("[ERROR] error in nfsmain loop:", err)
+	}
 
-	// wait for ctrl+c and clean up
+	// voip command unix socket loop
+	if err := voip.Listen(UNIX_SOCK); err != nil {
+		log.Fatalln("[ERROR] error in voip loop:", err)
+	}
+
+	// wait for ctrl+c
+	log.Println("[INFO] waiting for ctrl+c signal")
 	<-sigs
+
+	// clean up
 	nfsmain.Stop()
 	voip.Stop()
+	log.Println("[INFO] clean up done, exiting!")
 }
