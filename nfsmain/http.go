@@ -2,7 +2,6 @@ package nfsmain
 
 import (
 	"compress/gzip"
-	"errors"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -11,20 +10,14 @@ import (
 	"github.com/influxdb/influxdb/models"
 )
 
-var (
-	database string
-)
-
-func ListenLine(db, port string) {
-	database = db
-
+func ListenLine(port string, apps map[string]AppLine) {
 	http.HandleFunc("/", defaultHandler)
 	http.HandleFunc("/write", writeHandler)
 	http.ListenAndServe(":"+port, nil)
 }
 
 func defaultHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("[WARN] unexpected request:", r)
+	log.Println("[_WARN] unexpected request:", r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -47,6 +40,14 @@ func writeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer body.Close()
 
+	database := r.FormValue("db")
+	app, ok := apps[database]
+	if !ok {
+		log.Println("[_WARN] unregistered database:", database)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	data, err := ioutil.ReadAll(body)
 	if err != nil {
 		writeErr(w, err)
@@ -64,15 +65,7 @@ func writeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	database := r.FormValue("db")
-	if database != database {
-		log.Println("[_WARN] unexpected database:", database)
-		writeErr(w, errors.New("database is required"))
-		return
-	}
-
-	sdata.Update(points)
-	sdata.Trigger()
+	app.Update(points)
 	w.WriteHeader(http.StatusNoContent)
 }
 

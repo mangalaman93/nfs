@@ -11,7 +11,6 @@ import (
 	"github.com/Unknwon/goconfig"
 	"github.com/VividCortex/godaemon"
 	"github.com/mangalaman93/nfs/nfsmain"
-	"github.com/mangalaman93/nfs/voip"
 )
 
 func parseArgs(daemonize *bool, cfile *string) {
@@ -76,7 +75,7 @@ func main() {
 	// register ctrl+c
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	log.Println("[INFO] adding signal handler for SIGTERM")
+	log.Println("[_INFO] adding signal handler for SIGTERM")
 
 	// read configuration file
 	config, err := goconfig.LoadConfigFile(cfile)
@@ -93,19 +92,10 @@ func main() {
 		defer nfsmain.Stop()
 	}
 
-	// voip command unix socket loop
-	v, err := voip.NewVoipLine(config)
-	if err != nil {
-		log.Println("[ERROR] error in creating voip instance:", err)
-		panic(err)
-	}
-	v.Start()
-	defer v.Stop()
-
 	// wait for ctrl+c
-	log.Println("[INFO] waiting for ctrl+c signal")
+	log.Println("[_INFO] waiting for ctrl+c signal")
 	<-sigs
 
 	// exit
-	log.Println("[INFO] exiting main!")
+	log.Println("[_INFO] exiting main!")
 }

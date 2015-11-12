@@ -8,16 +8,29 @@ import (
 	"os"
 
 	"github.com/Unknwon/goconfig"
+	"github.com/influxdb/influxdb/models"
 )
 
 type VoipLine struct {
+	database string
 	sockfile string
 	sock     *net.UnixListener
+	state    *State
 	quit     chan bool
 }
 
 func NewVoipLine(config *goconfig.ConfigFile) (*VoipLine, error) {
+	state, err := NewState(config)
+	if err != nil {
+		return nil, err
+	}
+
 	sockfile, err := config.GetValue("VOIP", "unix_sock")
+	if err != nil {
+		return nil, err
+	}
+
+	db, err := config.GetValue("VOIP", "db")
 	if err != nil {
 		return nil, err
 	}
@@ -28,8 +41,10 @@ func NewVoipLine(config *goconfig.ConfigFile) (*VoipLine, error) {
 	}
 
 	return &VoipLine{
+		database: db,
 		sockfile: sockfile,
 		sock:     sock,
+		state:    state,
 		quit:     make(chan bool, 1),
 	}, nil
 }
@@ -45,6 +60,14 @@ func (v *VoipLine) Stop() {
 
 	os.Remove(v.sockfile)
 	log.Println("[INFO] exiting voip loop")
+}
+
+func (v *VoipLine) GetDB() string {
+	return v.database
+}
+
+func (v *VoipLine) Update(points models.Points) {
+	v.state.Update(points)
 }
 
 func (v *VoipLine) accept() {

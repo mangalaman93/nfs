@@ -1,9 +1,15 @@
 [DEFAULT]
 log_file=/home/ubuntu/nfs/nfs.log
 
-[INFLUXDB]
+[LINE_PROTOCOL]
 port=8086
-db=cadvisor
 
 [VOIP]
+db=cadvisor
 unix_sock=/home/ubuntu/nfs/nfs.sock
+
+[VOIP.CONTROL]
+period_length=600
+cpu_table=cpu_usage_total
+rx_table=rx_packets
+tx_table=tx_packets
