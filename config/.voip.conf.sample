@@ -1,0 +1,9 @@
+[DEFAULT]
+log_file=/home/ubuntu/nfs/nfs.log
+
+[INFLUXDB]
+port=8086
+db=cadvisor
+
+[VOIP]
+unix_sock=/home/ubuntu/nfs/nfs.sock

@@ -11,23 +11,16 @@ import (
 	"github.com/influxdb/influxdb/models"
 )
 
-const (
-	INFLUXDB_DB = "cadvisor"
+var (
+	database string
 )
 
-var sdata State
+func ListenLine(db, port string) {
+	database = db
 
-func Listen(port string) error {
-	// register handlers for collecting data over line protocol
 	http.HandleFunc("/", defaultHandler)
 	http.HandleFunc("/write", writeHandler)
-
-	// start listening until ctrl+c
-	go http.ListenAndServe(":"+port, nil)
-	return nil
-}
-
-func Stop() {
+	http.ListenAndServe(":"+port, nil)
 }
 
 func defaultHandler(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +65,7 @@ func writeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	database := r.FormValue("db")
-	if database != INFLUXDB_DB {
+	if database != database {
 		log.Println("[_WARN] unexpected database:", database)
 		writeErr(w, errors.New("database is required"))
 		return

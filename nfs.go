@@ -8,42 +8,52 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/Unknwon/goconfig"
 	"github.com/VividCortex/godaemon"
 	"github.com/mangalaman93/nfs/nfsmain"
 	"github.com/mangalaman93/nfs/voip"
 )
 
-const (
-	LOG_FILE  = "nfs.log"
-	UNIX_SOCK = "nfs.sock"
-)
-
-func parseArgs(daemonize *bool, port *string) {
+func parseArgs(daemonize *bool, cfile *string) {
 	flag.BoolVar(daemonize, "d", false, "daemonize nfs")
-	flag.StringVar(port, "p", "8086", "port")
+	flag.StringVar(cfile, "c", ".voip.conf", "abs path to configuration file")
 	flag.Parse()
 }
 
 func main() {
 	var logfile *os.File
 	var err error
-	var port string
+	var cfile string
 
+	// we open files before daemonizing the process so that
+	// no error occurrs in creating log file in child process
 	daemonize := true
 	if godaemon.Stage() == godaemon.StageParent {
-		parseArgs(&daemonize, &port)
+		parseArgs(&daemonize, &cfile)
 
 		if daemonize {
-			logfile, err = os.OpenFile(LOG_FILE, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+			config, err := goconfig.LoadConfigFile(cfile)
+			if err != nil {
+				fmt.Println("[ERROR] error in reading config file:", err)
+				panic(err)
+			}
+
+			filename, err := config.GetValue(goconfig.DEFAULT_SECTION, "log_file")
+			if err != nil {
+				fmt.Println("[ERROR] error in finding log_file in config:", err)
+				panic(err)
+			}
+
+			logfile, err = os.OpenFile(filename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 			if err != nil {
 				fmt.Println("[ERROR] error opening log file:", err)
-				os.Exit(1)
+				panic(err)
 			}
 
 			err = syscall.Flock(int(logfile.Fd()), syscall.LOCK_EX)
 			if err != nil {
 				fmt.Println("[ERROR] error acquiring lock to log file:", err)
-				os.Exit(1)
+				panic(err)
 			}
 		}
 	}
@@ -52,12 +62,12 @@ func main() {
 		_, _, err = godaemon.MakeDaemon(&godaemon.DaemonAttr{Files: []**os.File{&logfile}})
 		if err != nil {
 			fmt.Println("[ERROR] error daemonizing:", err)
-			os.Exit(1)
+			panic(err)
 		}
 
 		defer logfile.Close()
 		log.SetOutput(logfile)
-		parseArgs(&daemonize, &port)
+		parseArgs(&daemonize, &cfile)
 	}
 
 	log.SetFlags(log.LstdFlags)
@@ -68,22 +78,34 @@ func main() {
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	log.Println("[INFO] adding signal handler for SIGTERM")
 
+	// read configuration file
+	config, err := goconfig.LoadConfigFile(cfile)
+	if err != nil {
+		log.Println("[ERROR] error in reading config file:", err)
+		panic(err)
+	}
+
 	// control loop
-	if err := nfsmain.Listen(port); err != nil {
-		log.Fatalln("[ERROR] error in nfsmain loop:", err)
+	if err := nfsmain.Start(config); err != nil {
+		log.Println("[ERROR] error in nfsmain loop:", err)
+		panic(err)
+	} else {
+		defer nfsmain.Stop()
 	}
 
 	// voip command unix socket loop
-	if err := voip.Listen(UNIX_SOCK); err != nil {
-		log.Fatalln("[ERROR] error in voip loop:", err)
+	v, err := voip.NewVoipLine(config)
+	if err != nil {
+		log.Println("[ERROR] error in creating voip instance:", err)
+		panic(err)
 	}
+	v.Start()
+	defer v.Stop()
 
 	// wait for ctrl+c
 	log.Println("[INFO] waiting for ctrl+c signal")
 	<-sigs
 
-	// clean up
-	nfsmain.Stop()
-	voip.Stop()
-	log.Println("[INFO] clean up done, exiting!")
+	// exit
+	log.Println("[INFO] exiting main!")
 }
