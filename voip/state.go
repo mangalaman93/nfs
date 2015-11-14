@@ -1,20 +1,53 @@
 package voip
 
 import (
+	"log"
+
 	"github.com/Unknwon/goconfig"
 	"github.com/influxdb/influxdb/models"
 )
 
+const (
+	UBUFSIZE = 100
+)
+
+type Container struct {
+	id      string
+	inflow  *TimeData
+	outflow *TimeData
+	cpuload *TimeData
+}
+
+func NewContainer(id string, s, d int) *Container {
+	return &Container{
+		id:      id,
+		inflow:  NewTimeData(s, d),
+		outflow: NewTimeData(s, d),
+		cpuload: NewTimeData(s, d),
+	}
+}
+
 type State struct {
-	period_num      int64
-	period_length   int64
+	// control parameters
+	nfconts map[string]*Container
+	uchan   chan string
+	rchan   chan bool
+
+	// config parameters
+	step_length     int
+	period_length   int
 	cpu_usage_table string
 	rx_table        string
 	tx_table        string
 }
 
 func NewState(config *goconfig.ConfigFile) (*State, error) {
-	period_length, err := config.Int64("VOIP.CONTROL", "period_length")
+	step_length, err := config.Int("VOIP.CONTROL", "step_length")
+	if err != nil {
+		return nil, err
+	}
+
+	period_length, err := config.Int("VOIP.CONTROL", "period_length")
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +68,11 @@ func NewState(config *goconfig.ConfigFile) (*State, error) {
 	}
 
 	return &State{
-		period_num:      0,
+		nfconts: make(map[string]*Container),
+		uchan:   make(chan string, UBUFSIZE),
+		rchan:   make(chan bool, UBUFSIZE),
+
+		step_length:     step_length,
 		period_length:   period_length,
 		cpu_usage_table: cpu_table,
 		rx_table:        rx_table,
@@ -43,5 +80,55 @@ func NewState(config *goconfig.ConfigFile) (*State, error) {
 	}, nil
 }
 
+func (s *State) Destroy() {
+	close(s.uchan)
+	close(s.rchan)
+}
+
+func (s *State) Trigger() {
+}
+
 func (s *State) Update(points models.Points) {
+	select {
+	case nf := <-s.uchan:
+		s.nfconts[nf] = NewContainer(nf, s.step_length, s.period_length)
+	default:
+	}
+
+	if len(s.nfconts) == 0 {
+		return
+	}
+
+	for _, point := range points {
+		switch point.Name() {
+		case s.cpu_usage_table:
+		case s.rx_table:
+		case s.tx_table:
+			s.addPoint(point)
+		}
+	}
+
+	s.Trigger()
+}
+
+func (s *State) addPoint(point models.Point) {
+	cont, ok := s.nfconts[point.Tags()["container_name"]]
+	if !ok {
+		return
+	}
+
+	val, ok := point.Fields()["value"].(int64)
+	if !ok {
+		log.Println("[WARN] unknown data type!")
+		return
+	}
+
+	switch point.Name() {
+	case s.cpu_usage_table:
+		cont.cpuload.AddPoint(point.Time(), val)
+	case s.rx_table:
+		cont.inflow.AddPoint(point.Time(), val)
+	case s.tx_table:
+		cont.outflow.AddPoint(point.Time(), val)
+	}
 }

@@ -9,7 +9,8 @@ db=cadvisor
 unix_sock=/home/ubuntu/nfs/nfs.sock
 
 [VOIP.CONTROL]
-period_length=600
+step_length=100
+period_length=600000
 cpu_table=cpu_usage_total
 rx_table=rx_packets
 tx_table=tx_packets

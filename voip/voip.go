@@ -56,6 +56,7 @@ func (v *VoipLine) Start() {
 func (v *VoipLine) Stop() {
 	v.quit <- true
 	v.sock.Close()
+	v.state.Destroy()
 	<-v.quit
 
 	os.Remove(v.sockfile)
@@ -87,11 +88,11 @@ func (v *VoipLine) accept() {
 		}
 
 		log.Println("[INFO] Received request from", conn.RemoteAddr())
-		handleRequest(conn)
+		v.handleRequest(conn)
 	}
 }
 
-func handleRequest(conn *net.UnixConn) {
+func (v *VoipLine) handleRequest(conn *net.UnixConn) {
 	defer conn.Close()
 	enc := gob.NewEncoder(conn)
 	dec := gob.NewDecoder(conn)
@@ -100,7 +101,7 @@ func handleRequest(conn *net.UnixConn) {
 		var cmd Command
 		switch err := dec.Decode(&cmd); err {
 		case nil:
-			response := handleCommand(cmd)
+			response := v.state.handleCommand(cmd)
 			err := enc.Encode(response)
 			if err != nil {
 				log.Println("[WARN] error in sending voip data:", err)

@@ -6,6 +6,6 @@ type Command struct {
 type Response struct {
 }
 
-func handleCommand(cmd Command) *Response {
+func (s *State) handleCommand(cmd Command) *Response {
 	return nil
 }
