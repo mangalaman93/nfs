@@ -32,6 +32,7 @@ type State struct {
 	nfconts map[string]*Container
 	uchan   chan string
 	rchan   chan bool
+	mger    CManager
 
 	// config parameters
 	step_length     int
@@ -67,10 +68,28 @@ func NewState(config *goconfig.ConfigFile) (*State, error) {
 		return nil, err
 	}
 
+	var mger CManager
+	mtype, err := config.GetValue("VOIP.MANAGER", "type")
+	if err != nil {
+		return nil, err
+	}
+	switch mtype {
+	case "docker":
+		mger, err = NewDockerCManager(config)
+	case "stack":
+		mger, err = NewStackCManager(config)
+	default:
+		err = ErrInvalidManagerType
+	}
+	if err != nil {
+		return nil, err
+	}
+
 	return &State{
 		nfconts: make(map[string]*Container),
 		uchan:   make(chan string, UBUFSIZE),
 		rchan:   make(chan bool, UBUFSIZE),
+		mger:    mger,
 
 		step_length:     step_length,
 		period_length:   period_length,
@@ -86,6 +105,7 @@ func (s *State) Destroy() {
 }
 
 func (s *State) Trigger() {
+	// TODO
 }
 
 func (s *State) Update(points models.Points) {

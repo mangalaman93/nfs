@@ -14,3 +14,10 @@ period_length=600000
 cpu_table=cpu_usage_total
 rx_table=rx_packets
 tx_table=tx_packets
+
+[VOIP.MANAGER]
+type=docker
+
+[VOIP.TOPO]
+kepler=10.0.0.1:2575
+titan=10.0.0.2:2575

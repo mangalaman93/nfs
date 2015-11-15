@@ -24,6 +24,7 @@ func NewTimeData(step int, duration int) *TimeData {
 	}
 }
 
+// TODO
 func (td *TimeData) AddPoint(ts time.Time, val int64) {
 	td.tstamps[td.index] = ts
 	td.vals[td.index] = val

@@ -35,8 +35,8 @@ func Stop() {
 		app.Stop()
 	}
 
-	// for now, we don't know how to stop http listener
-	// and we do not want to get into complications of
-	// creating listener ourselves (later)
+	// TODO: for now, we don't know how to stop http
+	// listener and we do not want to get into
+	// complications of creating listener ourselves
 	log.Println("[_INFO] exiting control loop")
 }
