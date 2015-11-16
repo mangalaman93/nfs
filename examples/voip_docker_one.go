@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/mangalaman93/nfs/client"
@@ -35,8 +38,19 @@ func main() {
 	defer vc.Stop(client)
 	fmt.Println("started client:", client)
 
-	vc.Route(client, snort, server)
-	fmt.Println("route setup")
-	time.Sleep(60 * time.Second)
+	err = vc.Route(client, snort, server)
+	if err != nil {
+		panic(err)
+	} else {
+		fmt.Println("route setup")
+	}
+
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	timeout := time.After(60 * time.Second)
+	select {
+	case <-sigs:
+	case <-timeout:
+	}
 	fmt.Println("done with the experiment")
 }

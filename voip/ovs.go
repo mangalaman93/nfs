@@ -104,9 +104,10 @@ func ovsUSetupNetwork(id string) {
 
 // we only route at client
 // TODO: only works for one host (local)
+// TODO: resubmitting to port 1 always!
 func ovsRoute(cmac, mac, smac string) error {
 	cmd := "sudo ovs-ofctl add-flow " + OVS_BRIDGE + " priority=100,ip,dl_src=" + cmac
-	cmd += ",dl_dst=" + smac + ",actions=mod_dl_dst=" + mac + ",resubmit:" + cmac
+	cmd += ",dl_dst=" + smac + ",actions=mod_dl_dst=" + mac + ",resubmit:1"
 	_, err := rund(cmd)
 	if err != nil {
 		log.Println("[_WARN] unable to de-setup route for ", mac, err)

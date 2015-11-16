@@ -78,8 +78,8 @@ func (c *VoipClient) Stop(cont string) {
 }
 
 func (c *VoipClient) Route(client, router, server string) error {
-	_, serr := c.runc(&voip.Command{
-		Code: voip.CmdStopCont,
+	_, err := c.runc(&voip.Command{
+		Code: voip.CmdRouteCont,
 		KeyVal: map[string]string{
 			"client": client,
 			"server": server,
@@ -87,7 +87,7 @@ func (c *VoipClient) Route(client, router, server string) error {
 		},
 	})
 
-	return fmt.Errorf("%s", serr)
+	return err
 }
 
 func (c *VoipClient) runc(cmd *voip.Command) (string, error) {

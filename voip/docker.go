@@ -238,7 +238,7 @@ func (dc *DockerCManager) Stop(cmd *Command) *Response {
 
 	err = dc.pipe.DelNode(cont)
 	if err != nil {
-		log.Println("[_WARN] unable to delete node from pipe", cont)
+		log.Println("[_WARN] unable to delete node from pipe", cont, "err:", err)
 		log.Println("[_WARN] pipe may be inconsistent")
 	}
 
@@ -275,21 +275,21 @@ func (dc *DockerCManager) Route(cmd *Command) *Response {
 		return &Response{Err: err.Error()}
 	}
 
-	err = dc.pipe.AddNode(client, "")
+	err = dc.pipe.AddNode(server, RootNode.id)
 	if err != nil {
 		panic(err)
 	}
 
-	err = dc.pipe.AddNode(router, client)
+	err = dc.pipe.AddNode(router, server)
 	if err != nil {
 		panic(err)
 	}
 
-	err = dc.pipe.AddNode(server, router)
+	err = dc.pipe.AddNode(client, router)
 	if err != nil {
 		panic(err)
 	}
 
-	log.Println("[_INFO] setup route", cmac, " -> ", rmac, " -> ", smac)
+	log.Println("[_INFO] setup route", cmac, "->", rmac, "->", smac)
 	return &Response{}
 }

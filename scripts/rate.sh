@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # checking command line arguments
-if [ "$#" -lt 3 ]; then
+if [ "$#" -lt 4 ]; then
   echo "error!"
-  echo "Usage: $0 <rate> <ip-address-min> <ip-address-max> (assuming prefix 10.0.1.*)" >&2
+  echo "Usage: $0 <rate> <prefix> <ip-address-min> <ip-address-max>" >&2
   exit 1
 fi
 
@@ -22,7 +22,7 @@ stop() {
   echo "stopping client"
 }
 
-for i in $(seq $2 $3); do
+for i in $(seq $3 $4); do
   sudo iptables -F;
-  set_rate 10.0.1.$i $1;
+  set_rate $2.$i $1;
 done
