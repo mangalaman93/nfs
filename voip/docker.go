@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"strconv"
-	"strings"
 
 	"github.com/Unknwon/goconfig"
 	docker "github.com/samalba/dockerclient"
@@ -164,13 +163,25 @@ func (dc *DockerCManager) runc(host, prefix string, cconf *docker.ContainerConfi
 	}()
 	log.Println("[_INFO] created container with id", cid)
 
+	err = hclient.StartContainer(cid, hconf)
+	if err != nil {
+		undo = true
+		return &Response{Err: err.Error()}
+	}
+	log.Println("[_INFO] container with id", cid)
+	defer func() {
+		if undo {
+			hclient.StopContainer(cid, stop_timeout)
+		}
+	}()
+
 	// setup ovs network
 	ip, mac, err := ovsSetupNetwork(cid)
 	if err != nil {
 		undo = true
 		return &Response{Err: err.Error()}
 	}
-	log.Println("[_INFO] setup network for container", cid)
+	log.Println("[_INFO] setup network for container", cid, "ip:", ip, "mac:", mac)
 	defer func() {
 		if undo {
 			ovsUSetupNetwork(cid)
@@ -187,13 +198,6 @@ func (dc *DockerCManager) runc(host, prefix string, cconf *docker.ContainerConfi
 			dc.pipe.DelNode(cid)
 		}
 	}()
-
-	err = hclient.StartContainer(cid, hconf)
-	if err != nil {
-		undo = true
-		return &Response{Err: err.Error()}
-	}
-	log.Println("[_INFO] container with id", cid, "running with ip", ip)
 
 	return &Response{Result: cid}
 }
@@ -223,16 +227,13 @@ func (dc *DockerCManager) Stop(cmd *Command) *Response {
 		hclient.RemoveContainer(cont, true, true)
 	}
 
-	// TODO: ideally, the call should be explicit
-	if strings.Contains(cont, "sipp-client") {
-		cmac, err := dc.pipe.GetMacAddress(cont)
-		if err != nil {
-			log.Println("[_WARN] unable to get mac from pipe", cont)
-			log.Println("[_WARN] pipe may be inconsistent")
-		} else {
-			ovsDeRoute(cmac)
-			log.Println("[_INFO] derouted for container", cont)
-		}
+	cmac, err := dc.pipe.GetMacAddress(cont)
+	if err != nil {
+		log.Println("[_WARN] unable to get mac from pipe", cont)
+		log.Println("[_WARN] pipe may be inconsistent")
+	} else {
+		ovsDeRoute(cmac)
+		log.Println("[_INFO] derouted for container", cont)
 	}
 
 	err = dc.pipe.DelNode(cont)

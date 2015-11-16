@@ -104,12 +104,12 @@ func ovsUSetupNetwork(id string) {
 
 // we only route at client
 // TODO: only works for one host (local)
-func ovsRoute(cmac, rmac, smac string) error {
+func ovsRoute(cmac, mac, smac string) error {
 	cmd := "sudo ovs-ofctl add-flow " + OVS_BRIDGE + " priority=100,ip,dl_src=" + cmac
-	cmd += ",dl_dst=" + smac + ",actions=mod_dl_dst=" + rmac + ",resubmit:" + cmac
+	cmd += ",dl_dst=" + smac + ",actions=mod_dl_dst=" + mac + ",resubmit:" + cmac
 	_, err := rund(cmd)
 	if err != nil {
-		log.Println("[_WARN] unable to setup route for ", rmac, err)
+		log.Println("[_WARN] unable to de-setup route for ", mac, err)
 	}
 
 	return err
