@@ -314,9 +314,52 @@ func (dc *DockerCManager) Stop(cmd *Command) *Response {
 		return &Response{err: err}
 	}
 
+	cmac, err := dc.pipe.GetMacAddress(cont)
+	if err != nil {
+		return &Response{err: err}
+	}
+	ovsDeRoute(cmac)
+
 	return &Response{}
 }
 
 func (dc *DockerCManager) Route(cmd *Command) *Response {
-	return nil
+	// get all the required keys from KeyVal first
+	kv := cmd.KeyVal
+	client, ok := kv["client"]
+	if !ok {
+		return &Response{err: ErrKeyNotFound}
+	}
+
+	cmac, err := dc.pipe.GetMacAddress(client)
+	if err != nil {
+		return &Response{err: err}
+	}
+
+	server, ok := kv["server"]
+	if !ok {
+		return &Response{err: ErrKeyNotFound}
+	}
+
+	smac, err := dc.pipe.GetMacAddress(server)
+	if err != nil {
+		return &Response{err: err}
+	}
+
+	router, ok := kv["router"]
+	if !ok {
+		return &Response{err: ErrKeyNotFound}
+	}
+
+	rmac, err := dc.pipe.GetMacAddress(router)
+	if err != nil {
+		return &Response{err: err}
+	}
+
+	err = ovsRoute(cmac, rmac, smac)
+	if err != nil {
+		return &Response{err: err}
+	}
+
+	return &Response{}
 }

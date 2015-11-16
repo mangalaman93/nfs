@@ -144,6 +144,20 @@ func (p *PipeLine) GetIPAddress(cur string) (string, error) {
 	return "", ErrIdNotExists
 }
 
+func (p *PipeLine) GetMacAddress(cur string) (string, error) {
+	me, ok := p.restNodes[cur]
+	if ok {
+		return me.mac, nil
+	}
+
+	me, ok = p.idToNode[cur]
+	if ok {
+		return me.mac, nil
+	}
+
+	return "", ErrIdNotExists
+}
+
 func (p *PipeLine) GetHost(cur string) (string, error) {
 	me, ok := p.restNodes[cur]
 	if ok {

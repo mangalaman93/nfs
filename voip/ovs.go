@@ -28,6 +28,11 @@ func ovsInit() error {
 		return ErrOvsNotFound
 	}
 
+	out, err = exec.Command("/bin/sh", "-c", "which ovs-ofctl").Output()
+	if err != nil || string(out) == "" {
+		return ErrOvsNotFound
+	}
+
 	_, err = exec.Command("/bin/sh", "-c", "sudo ovs-vsctl br-exists "+OVS_BRIDGE).Output()
 	if err != nil {
 		return nil
@@ -54,6 +59,7 @@ func ovsInit() error {
 
 func ovsDestroy() {
 	exec.Command("/bin/sh", "-c", "sudo ovs-vsctl del-br "+OVS_BRIDGE).Output()
+	// TODO: clean up routes
 }
 
 func ovsSetupNetwork(id, mac string) error {
@@ -62,6 +68,15 @@ func ovsSetupNetwork(id, mac string) error {
 }
 
 // we only route at client
-func ovsRoute() error {
-	return nil
+// TODO: only works on one host (local)
+func ovsRoute(cmac, rmac, smac string) error {
+	cmd := "sudo ovs-ofctl add-flow " + OVS_BRIDGE + " priority=100,ip,dl_src=" + cmac
+	cmd += ",dl_dst=" + smac + ",actions=mod_dl_dst=" + rmac + ",resubmit:" + cmac
+	_, err := exec.Command("/bin/sh", "-c", cmd).Output()
+	return err
+}
+
+func ovsDeRoute(cmac string) {
+	cmd := "sudo ovs-ofctl del-flows " + OVS_BRIDGE + " dl_src=" + cmac
+	exec.Command("/bin/sh", "-c", cmd).Output()
 }
