@@ -8,36 +8,35 @@ import (
 )
 
 func main() {
-	vc, err := client.NewVoipClient("/home/ubuntu/nfs/.voip.vonf")
+	vc, err := client.NewVoipClient("/home/ubuntu/nfs/.voip.conf")
 	if err != nil {
 		panic(err)
 	}
+	defer vc.Close()
 
 	server, err := vc.AddServer()
-	defer vc.Stop(server)
 	if err != nil {
 		panic(err)
 	}
+	defer vc.Stop(server)
 	fmt.Println("started server:", server)
 
 	snort, err := vc.AddSnort()
-	defer vc.Stop(snort)
 	if err != nil {
 		panic(err)
 	}
+	defer vc.Stop(snort)
 	fmt.Println("started snort:", snort)
 
 	client, err := vc.AddClient(server)
-	defer vc.Stop(client)
 	if err != nil {
 		panic(err)
 	}
+	defer vc.Stop(client)
 	fmt.Println("started client:", client)
 
 	vc.Route(client, snort, server)
 	fmt.Println("route setup")
-
 	time.Sleep(60 * time.Second)
-	vc.Close()
 	fmt.Println("done with the experiment")
 }

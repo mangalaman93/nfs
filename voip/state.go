@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	UBUFSIZE = 100
+	ubufsize = 100
 )
 
 type MContainer struct {
@@ -78,7 +78,7 @@ func NewState(config *goconfig.ConfigFile) (*State, error) {
 	case "stack":
 		mger, err = NewStackCManager(config)
 	default:
-		err = ErrInvalidManagerType
+		err = ErrUnknownManager
 	}
 	if err != nil {
 		return nil, err
@@ -86,7 +86,7 @@ func NewState(config *goconfig.ConfigFile) (*State, error) {
 
 	return &State{
 		nfconts: make(map[string]*MContainer),
-		uchan:   make(chan string, UBUFSIZE),
+		uchan:   make(chan string, ubufsize),
 		mger:    mger,
 
 		step_length:     step_length,
@@ -123,6 +123,7 @@ func (s *State) Update(points models.Points) {
 		case s.rx_table:
 		case s.tx_table:
 			s.addPoint(point)
+		default:
 		}
 	}
 
@@ -137,7 +138,7 @@ func (s *State) addPoint(point models.Point) {
 
 	val, ok := point.Fields()["value"].(int64)
 	if !ok {
-		log.Println("[WARN] unknown data type!")
+		log.Println("[_WARN] unknown data type!")
 		return
 	}
 
@@ -148,5 +149,6 @@ func (s *State) addPoint(point models.Point) {
 		cont.inflow.AddPoint(point.Time(), val)
 	case s.tx_table:
 		cont.outflow.AddPoint(point.Time(), val)
+	default:
 	}
 }

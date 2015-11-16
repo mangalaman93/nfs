@@ -57,7 +57,7 @@ func writeHandler(w http.ResponseWriter, r *http.Request) {
 	points, err := models.ParsePointsWithPrecision(data, time.Now().UTC(), precision)
 	if err != nil {
 		if err.Error() == "EOF" {
-			log.Println("[_INFO] closing connection!")
+			log.Println("[_INFO] closing connection with", r.Host)
 			w.WriteHeader(http.StatusOK)
 			return
 		}

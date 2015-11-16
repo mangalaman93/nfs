@@ -43,10 +43,25 @@ var (
 
 // we start with dummy root node
 func NewPipeLine() *PipeLine {
+	m := make(map[string]*Node)
+	m[""] = RootNode
+
 	return &PipeLine{
 		root:      RootNode,
-		idToNode:  make(map[string]*Node),
+		idToNode:  m,
 		restNodes: make(map[string]*Node),
+	}
+}
+
+func (p *PipeLine) Destroy(dc *DockerCManager) {
+	for id, _ := range p.idToNode {
+		if id != "" {
+			dc.Stop(&Command{Code: CmdStopCont, KeyVal: map[string]string{"cont": id}})
+		}
+	}
+
+	for id, _ := range p.restNodes {
+		dc.Stop(&Command{Code: CmdStopCont, KeyVal: map[string]string{"cont": id}})
 	}
 }
 
@@ -131,45 +146,30 @@ func (p *PipeLine) String() string {
 }
 
 func (p *PipeLine) GetIPAddress(cur string) (string, error) {
-	me, ok := p.restNodes[cur]
-	if ok {
-		return me.ip4, nil
+	me, err := p.getNode(cur)
+	if err != nil {
+		return "", err
 	}
 
-	me, ok = p.idToNode[cur]
-	if ok {
-		return me.ip4, nil
-	}
-
-	return "", ErrIdNotExists
+	return me.ip4, nil
 }
 
 func (p *PipeLine) GetMacAddress(cur string) (string, error) {
-	me, ok := p.restNodes[cur]
-	if ok {
-		return me.mac, nil
+	me, err := p.getNode(cur)
+	if err != nil {
+		return "", err
 	}
 
-	me, ok = p.idToNode[cur]
-	if ok {
-		return me.mac, nil
-	}
-
-	return "", ErrIdNotExists
+	return me.mac, nil
 }
 
 func (p *PipeLine) GetHost(cur string) (string, error) {
-	me, ok := p.restNodes[cur]
-	if ok {
-		return me.host, nil
+	me, err := p.getNode(cur)
+	if err != nil {
+		return "", err
 	}
 
-	me, ok = p.idToNode[cur]
-	if ok {
-		return me.host, nil
-	}
-
-	return "", ErrIdNotExists
+	return me.host, nil
 }
 
 func checkOrphan(me *Node) bool {
@@ -180,4 +180,18 @@ func checkOrphan(me *Node) bool {
 	}
 
 	return false
+}
+
+func (p *PipeLine) getNode(cur string) (*Node, error) {
+	me, ok := p.restNodes[cur]
+	if ok {
+		return me, nil
+	}
+
+	me, ok = p.idToNode[cur]
+	if ok {
+		return me, nil
+	}
+
+	return nil, ErrIdNotExists
 }

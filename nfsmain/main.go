@@ -25,8 +25,10 @@ func Start(config *goconfig.ConfigFile) error {
 
 	apps = make(map[string]AppLine)
 	apps[vl.GetDB()] = vl
+	log.Println("[_INFO] registered db:", vl.GetDB(), "with VoipLine instance")
 
 	go ListenLine(port, apps)
+	log.Println("[_INFO] listening for data over line protocol on port", port)
 	return nil
 }
 

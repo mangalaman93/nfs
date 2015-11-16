@@ -3,19 +3,21 @@ package voip
 import (
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
+	"strings"
 
 	"github.com/Unknwon/goconfig"
-	"github.com/samalba/dockerclient"
+	docker "github.com/samalba/dockerclient"
 	"github.com/satori/go.uuid"
 )
 
 const (
-	IMG_SIPP       = "mangalaman93/sipp"
-	IMG_SNORT      = "mangalaman93/snort"
-	SIPP_BUFF_SIZE = "1048576"
-	CPU_PERIOD     = 100000
-	STOP_TIMEOUT   = 4
+	img_sipp       = "mangalaman93/sipp"
+	img_snort      = "mangalaman93/snort"
+	sipp_buff_size = "1048576"
+	cpu_period     = 100000
+	stop_timeout   = 4
 )
 
 var (
@@ -24,7 +26,7 @@ var (
 )
 
 type DockerCManager struct {
-	dclients map[string]*dockerclient.DockerClient
+	dclients map[string]*docker.DockerClient
 	pipe     *PipeLine
 }
 
@@ -39,19 +41,20 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 		return nil, err
 	}
 
-	dclients := make(map[string]*dockerclient.DockerClient)
+	dclients := make(map[string]*docker.DockerClient)
 	for _, host := range hosts {
 		address, err := config.GetValue("VOIP.TOPO", host)
 		if err != nil {
 			return nil, err
 		}
 
-		c, err := dockerclient.NewDockerClient(address, nil)
+		c, err := docker.NewDockerClient(address, nil)
 		if err != nil {
 			return nil, err
 		}
 
 		dclients[host] = c
+		log.Println("[_INFO] added host", host)
 	}
 
 	return &DockerCManager{
@@ -61,264 +64,182 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 }
 
 func (dc *DockerCManager) Destroy() {
+	dc.pipe.Destroy(dc)
 	ovsDestroy()
 }
 
 func (dc *DockerCManager) AddServer(cmd *Command) *Response {
-	undo := false
-
-	// get all the required keys from KeyVal first
 	kv := cmd.KeyVal
-	host, ok := kv["host"]
-	if !ok {
-		return &Response{Err: ErrKeyNotFound}
-	}
-	hclient, ok := dc.dclients[host]
-	if !ok {
-		return &Response{Err: ErrHostNotFound}
+	host, ok1 := kv["host"]
+	sshares, ok2 := kv["shares"]
+	if !ok1 || !ok2 {
+		return &Response{Err: ErrKeyNotFound.Error()}
 	}
 
-	sshares, ok := kv["shares"]
-	if !ok {
-		return &Response{Err: ErrKeyNotFound}
-	}
 	shares, err := strconv.ParseInt(sshares, 10, 64)
 	if err != nil {
-		return &Response{Err: err}
+		return &Response{Err: err.Error()}
 	}
 
-	mac, err := GetMacAddress()
-	if err != nil {
-		return &Response{Err: ErrNoMacAddress}
-	}
-
-	cid, err := hclient.CreateContainer(&dockerclient.ContainerConfig{
-		Env:             []string{"ARGS=\"-buff_size " + SIPP_BUFF_SIZE + " -sn uas\""},
-		Image:           IMG_SIPP,
+	return dc.runc(host, "sipp-server", &docker.ContainerConfig{
+		Env:             []string{"ARGS=\"-buff_size " + sipp_buff_size + " -sn uas\""},
+		Image:           img_sipp,
 		NetworkDisabled: true,
-	}, fmt.Sprintf("sipp-server-%s", uuid.NewV1()))
+	}, &docker.HostConfig{
+		CpuShares: shares,
+		CpuQuota:  int64(shares / 1024 * cpu_period),
+	})
+}
+
+func (dc *DockerCManager) AddClient(cmd *Command) *Response {
+	kv := cmd.KeyVal
+	host, ok1 := kv["host"]
+	sshares, ok2 := kv["shares"]
+	serverid, ok3 := kv["server"]
+	if !ok1 || !ok2 || !ok3 {
+		return &Response{Err: ErrKeyNotFound.Error()}
+	}
+
+	shares, err := strconv.ParseInt(sshares, 10, 64)
 	if err != nil {
-		return &Response{Err: err}
+		return &Response{Err: err.Error()}
+	}
+
+	server_ip, err := dc.pipe.GetIPAddress(serverid)
+	if err != nil {
+		return &Response{Err: err.Error()}
+	}
+
+	args := "-buff_size " + sipp_buff_size + " -sn uac -r 0 " + server_ip + ":5060"
+	return dc.runc(host, "sipp-client", &docker.ContainerConfig{
+		Env:             []string{"ARGS=\"" + args + "\""},
+		Image:           img_sipp,
+		NetworkDisabled: true,
+	}, &docker.HostConfig{
+		CpuShares: shares,
+		CpuQuota:  int64(shares / 1024 * cpu_period),
+	})
+}
+
+func (dc *DockerCManager) AddSnort(cmd *Command) *Response {
+	kv := cmd.KeyVal
+	host, ok1 := kv["host"]
+	sshares, ok2 := kv["shares"]
+	if !ok1 || !ok2 {
+		return &Response{Err: ErrKeyNotFound.Error()}
+	}
+
+	shares, err := strconv.ParseInt(sshares, 10, 64)
+	if err != nil {
+		return &Response{Err: err.Error()}
+	}
+
+	return dc.runc(host, "snort", &docker.ContainerConfig{
+		Image:           img_snort,
+		NetworkDisabled: true,
+	}, &docker.HostConfig{
+		CapAdd:    []string{"NET_ADMIN"},
+		CpuShares: shares,
+		CpuQuota:  int64(shares / 1024 * cpu_period),
+	})
+}
+
+func (dc *DockerCManager) runc(host, prefix string, cconf *docker.ContainerConfig, hconf *docker.HostConfig) *Response {
+	hclient, ok := dc.dclients[host]
+	if !ok {
+		return &Response{Err: ErrHostNotFound.Error()}
+	}
+
+	// rollback in case!
+	undo := false
+
+	cid, err := hclient.CreateContainer(cconf, fmt.Sprintf("%s-%s", prefix, uuid.NewV1()))
+	if err != nil {
+		return &Response{Err: err.Error()}
 	}
 	defer func() {
 		if undo {
 			hclient.RemoveContainer(cid, true, true)
 		}
 	}()
+	log.Println("[_INFO] created container with id", cid)
 
 	// setup ovs network
-	err = ovsSetupNetwork(cid, mac)
+	ip, mac, err := ovsSetupNetwork(cid)
 	if err != nil {
 		undo = true
-		return &Response{Err: err}
+		return &Response{Err: err.Error()}
 	}
+	log.Println("[_INFO] setup network for container", cid)
+	defer func() {
+		if undo {
+			ovsUSetupNetwork(cid)
+		}
+	}()
 
-	// add node to the pipe
-	info, err := hclient.InspectContainer(cid)
-	err = dc.pipe.NewNode(cid, info.NetworkSettings.IPAddress, mac, host)
+	err = dc.pipe.NewNode(cid, ip, mac, host)
 	if err != nil {
 		undo = true
-		return &Response{Err: err}
+		return &Response{Err: err.Error()}
 	}
+	defer func() {
+		if undo {
+			dc.pipe.DelNode(cid)
+		}
+	}()
 
-	err = hclient.StartContainer(cid, &dockerclient.HostConfig{
-		CpuShares: shares,
-		CpuQuota:  int64(shares / 1024 * CPU_PERIOD),
-	})
+	err = hclient.StartContainer(cid, hconf)
 	if err != nil {
 		undo = true
-		return &Response{Err: err}
+		return &Response{Err: err.Error()}
 	}
+	log.Println("[_INFO] container with id", cid, "running with ip", ip)
 
 	return &Response{Result: cid}
 }
 
-func (dc *DockerCManager) AddClient(cmd *Command) *Response {
-	undo := false
-
-	// get all the required keys from KeyVal first
-	kv := cmd.KeyVal
-	host, ok := kv["host"]
-	if !ok {
-		return &Response{Err: ErrKeyNotFound}
-	}
-	hclient, ok := dc.dclients[host]
-	if !ok {
-		return &Response{Err: ErrHostNotFound}
-	}
-
-	sshares, ok := kv["shares"]
-	if !ok {
-		return &Response{Err: ErrKeyNotFound}
-	}
-	shares, err := strconv.ParseInt(sshares, 10, 64)
-	if err != nil {
-		return &Response{Err: err}
-	}
-
-	serverid, ok := kv["server"]
-	if !ok {
-		return &Response{Err: ErrKeyNotFound}
-	}
-
-	server_ip, err := dc.pipe.GetIPAddress(serverid)
-	if err != nil {
-		return &Response{Err: err}
-	}
-
-	mac, err := GetMacAddress()
-	if err != nil {
-		return &Response{Err: ErrNoMacAddress}
-	}
-
-	args := "-buff_size " + SIPP_BUFF_SIZE + " -sn uac -r 0 " + server_ip + ":5060"
-	sid, err := hclient.CreateContainer(&dockerclient.ContainerConfig{
-		Env:             []string{"ARGS=\"" + args + "\""},
-		Image:           IMG_SIPP,
-		NetworkDisabled: true,
-	}, fmt.Sprintf("sipp-client-%s", uuid.NewV1()))
-	if err != nil {
-		return &Response{Err: err}
-	}
-	defer func() {
-		if undo {
-			hclient.RemoveContainer(sid, true, true)
-		}
-	}()
-
-	// setup ovs network
-	err = ovsSetupNetwork(sid, mac)
-	if err != nil {
-		undo = true
-		return &Response{Err: err}
-	}
-
-	// add node to the pipe
-	info, err := hclient.InspectContainer(sid)
-	err = dc.pipe.NewNode(sid, info.NetworkSettings.IPAddress, mac, host)
-	if err != nil {
-		undo = true
-		return &Response{Err: err}
-	}
-
-	err = hclient.StartContainer(sid, &dockerclient.HostConfig{
-		CpuShares: shares,
-		CpuQuota:  int64(shares / 1024 * CPU_PERIOD),
-	})
-	if err != nil {
-		undo = true
-		return &Response{Err: err}
-	}
-
-	return &Response{Result: sid}
-}
-
-func (dc *DockerCManager) AddSnort(cmd *Command) *Response {
-	undo := false
-
-	// get all the required keys from KeyVal first
-	kv := cmd.KeyVal
-	host, ok := kv["host"]
-	if !ok {
-		return &Response{Err: ErrKeyNotFound}
-	}
-	hclient, ok := dc.dclients[host]
-	if !ok {
-		return &Response{Err: ErrHostNotFound}
-	}
-
-	sshares, ok := kv["shares"]
-	if !ok {
-		return &Response{Err: ErrKeyNotFound}
-	}
-	shares, err := strconv.ParseInt(sshares, 10, 64)
-	if err != nil {
-		return &Response{Err: err}
-	}
-
-	mac, err := GetMacAddress()
-	if err != nil {
-		return &Response{Err: ErrNoMacAddress}
-	}
-
-	id, err := hclient.CreateContainer(&dockerclient.ContainerConfig{
-		Image:           IMG_SNORT,
-		NetworkDisabled: true,
-	}, fmt.Sprintf("snort-%s", uuid.NewV1()))
-	if err != nil {
-		return &Response{Err: err}
-	}
-	defer func() {
-		if undo {
-			hclient.RemoveContainer(id, true, true)
-		}
-	}()
-
-	// setup ovs network
-	err = ovsSetupNetwork(id, mac)
-	if err != nil {
-		undo = true
-		return &Response{Err: err}
-	}
-
-	// add node to the pipe
-	info, err := hclient.InspectContainer(id)
-	err = dc.pipe.NewNode(id, info.NetworkSettings.IPAddress, mac, host)
-	if err != nil {
-		undo = true
-		return &Response{Err: err}
-	}
-
-	err = hclient.StartContainer(id, &dockerclient.HostConfig{
-		CapAdd:    []string{"NET_ADMIN"},
-		CpuShares: shares,
-		CpuQuota:  int64(shares / 1024 * CPU_PERIOD),
-	})
-	if err != nil {
-		undo = true
-		return &Response{Err: err}
-	}
-
-	return &Response{Result: id}
-}
-
 func (dc *DockerCManager) Stop(cmd *Command) *Response {
-	// get all the required keys from KeyVal first
 	kv := cmd.KeyVal
 	cont, ok := kv["cont"]
 	if !ok {
-		return &Response{Err: ErrKeyNotFound}
+		return &Response{Err: ErrKeyNotFound.Error()}
 	}
+
 	host, err := dc.pipe.GetHost(cont)
 	if err != nil {
-		return &Response{Err: err}
+		return &Response{Err: err.Error()}
 	}
-	dclient, ok := dc.dclients[host]
+	hclient, ok := dc.dclients[host]
 	if !ok {
-		// Impossible
 		panic(!ok)
 	}
 
-	err = dclient.StopContainer(cont, STOP_TIMEOUT)
+	err = hclient.StopContainer(cont, stop_timeout)
 	if err != nil {
-		return &Response{Err: err}
+		log.Println("[_WARN] unable to stop container", cont)
+	} else {
+		log.Println("[_INFO] container with id", cont, "stopped")
+		ovsUSetupNetwork(cont)
+		hclient.RemoveContainer(cont, true, true)
 	}
 
-	err = dclient.RemoveContainer(cont, true, true)
-	if err != nil {
-		return &Response{Err: err}
+	// TODO: ideally, the call should be explicit
+	if strings.Contains(cont, "sipp-client") {
+		cmac, err := dc.pipe.GetMacAddress(cont)
+		if err != nil {
+			log.Println("[_WARN] unable to get mac from pipe", cont)
+			log.Println("[_WARN] pipe may be inconsistent")
+		} else {
+			ovsDeRoute(cmac)
+			log.Println("[_INFO] derouted for container", cont)
+		}
 	}
 
 	err = dc.pipe.DelNode(cont)
 	if err != nil {
-		return &Response{Err: err}
+		log.Println("[_WARN] unable to delete node from pipe", cont)
+		log.Println("[_WARN] pipe may be inconsistent")
 	}
-
-	cmac, err := dc.pipe.GetMacAddress(cont)
-	if err != nil {
-		return &Response{Err: err}
-	}
-	ovsDeRoute(cmac)
 
 	return &Response{}
 }
@@ -326,39 +247,31 @@ func (dc *DockerCManager) Stop(cmd *Command) *Response {
 func (dc *DockerCManager) Route(cmd *Command) *Response {
 	// get all the required keys from KeyVal first
 	kv := cmd.KeyVal
-	client, ok := kv["client"]
-	if !ok {
-		return &Response{Err: ErrKeyNotFound}
+	client, ok1 := kv["client"]
+	server, ok2 := kv["server"]
+	router, ok3 := kv["router"]
+	if !ok1 || !ok2 || !ok3 {
+		return &Response{Err: ErrKeyNotFound.Error()}
 	}
 
 	cmac, err := dc.pipe.GetMacAddress(client)
 	if err != nil {
-		return &Response{Err: err}
-	}
-
-	server, ok := kv["server"]
-	if !ok {
-		return &Response{Err: ErrKeyNotFound}
+		return &Response{Err: err.Error()}
 	}
 
 	smac, err := dc.pipe.GetMacAddress(server)
 	if err != nil {
-		return &Response{Err: err}
-	}
-
-	router, ok := kv["router"]
-	if !ok {
-		return &Response{Err: ErrKeyNotFound}
+		return &Response{Err: err.Error()}
 	}
 
 	rmac, err := dc.pipe.GetMacAddress(router)
 	if err != nil {
-		return &Response{Err: err}
+		return &Response{Err: err.Error()}
 	}
 
 	err = ovsRoute(cmac, rmac, smac)
 	if err != nil {
-		return &Response{Err: err}
+		return &Response{Err: err.Error()}
 	}
 
 	err = dc.pipe.AddNode(client, "")
@@ -376,5 +289,6 @@ func (dc *DockerCManager) Route(cmd *Command) *Response {
 		panic(err)
 	}
 
+	log.Println("[_INFO] setup route", cmac, " -> ", rmac, " -> ", smac)
 	return &Response{}
 }

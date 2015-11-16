@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/gob"
+	"fmt"
 	"net"
 
 	"github.com/Unknwon/goconfig"
@@ -9,7 +10,7 @@ import (
 )
 
 type VoipClient struct {
-	conn *net.UnixConn
+	sockfile string
 }
 
 func NewVoipClient(cfile string) (*VoipClient, error) {
@@ -24,109 +25,61 @@ func NewVoipClient(cfile string) (*VoipClient, error) {
 		return nil, err
 	}
 
-	conn, err := net.DialUnix("unix", nil, &net.UnixAddr{sockfile, "unix"})
-	if err != nil {
-		return nil, err
-	}
-
 	return &VoipClient{
-		conn: conn,
+		sockfile: sockfile,
 	}, nil
 }
 
 func (c *VoipClient) Close() {
-	c.conn.Close()
 }
 
 func (c *VoipClient) AddServer() (string, error) {
-	enc := gob.NewEncoder(c.conn)
-	dec := gob.NewDecoder(c.conn)
-
-	enc.Encode(&voip.Command{
-		Code: voip.StartServer,
+	return c.runc(&voip.Command{
+		Code: voip.CmdStartServer,
 		KeyVal: map[string]string{
 			"host":   "local",
 			"shares": "1024",
 		},
 	})
-
-	var res voip.Response
-	dec.Decode(&res)
-	if res.Err != nil {
-		return "", res.Err
-	}
-
-	return res.Result, nil
 }
 
 func (c *VoipClient) AddClient(server string) (string, error) {
-	enc := gob.NewEncoder(c.conn)
-	dec := gob.NewDecoder(c.conn)
-
-	enc.Encode(&voip.Command{
-		Code: voip.StartClient,
+	return c.runc(&voip.Command{
+		Code: voip.CmdStartClient,
 		KeyVal: map[string]string{
 			"host":   "local",
 			"shares": "1024",
 			"server": server,
 		},
 	})
-
-	var res voip.Response
-	dec.Decode(&res)
-	if res.Err != nil {
-		return "", res.Err
-	}
-
-	return res.Result, nil
 }
 
 func (c *VoipClient) AddSnort() (string, error) {
-	enc := gob.NewEncoder(c.conn)
-	dec := gob.NewDecoder(c.conn)
-
-	enc.Encode(&voip.Command{
-		Code: voip.StartSnort,
+	return c.runc(&voip.Command{
+		Code: voip.CmdStartSnort,
 		KeyVal: map[string]string{
 			"host":   "local",
 			"shares": "1024",
 		},
 	})
-
-	var res voip.Response
-	dec.Decode(&res)
-	if res.Err != nil {
-		return "", res.Err
-	}
-
-	return res.Result, nil
 }
 
 func (c *VoipClient) Stop(cont string) {
-	enc := gob.NewEncoder(c.conn)
-	dec := gob.NewDecoder(c.conn)
-
-	enc.Encode(&voip.Command{
-		Code: voip.StopCont,
+	_, err := c.runc(&voip.Command{
+		Code: voip.CmdStopCont,
 		KeyVal: map[string]string{
-			"host":   "local",
-			"shares": "1024",
+			"cont": cont,
 		},
 	})
 
-	var res voip.Response
-	dec.Decode(&res)
-	if res.Err != nil {
-		panic(res.Err)
+	if err != nil {
+		panic(err)
 	}
 }
 
 func (c *VoipClient) Route(client, router, server string) error {
-	enc := gob.NewEncoder(c.conn)
-	dec := gob.NewDecoder(c.conn)
-
-	enc.Encode(&voip.Command{
-		Code: voip.StopCont,
+	_, serr := c.runc(&voip.Command{
+		Code: voip.CmdStopCont,
 		KeyVal: map[string]string{
 			"client": client,
 			"server": server,
@@ -134,11 +87,24 @@ func (c *VoipClient) Route(client, router, server string) error {
 		},
 	})
 
+	return fmt.Errorf("%s", serr)
+}
+
+func (c *VoipClient) runc(cmd *voip.Command) (string, error) {
+	conn, err := net.DialUnix("unix", nil, &net.UnixAddr{c.sockfile, "unix"})
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+	enc := gob.NewEncoder(conn)
+	dec := gob.NewDecoder(conn)
+
+	enc.Encode(cmd)
 	var res voip.Response
 	dec.Decode(&res)
-	if res.Err != nil {
-		return res.Err
+	if res.Err != "" {
+		return "", fmt.Errorf("%s", res.Err)
 	}
 
-	return nil
+	return res.Result, nil
 }

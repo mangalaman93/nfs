@@ -7,11 +7,11 @@ import (
 type CCode int
 
 const (
-	StartClient CCode = iota
-	StartServer
-	StartSnort
-	StopCont
-	RouteCont
+	CmdStartClient CCode = iota
+	CmdStartServer
+	CmdStartSnort
+	CmdStopCont
+	CmdRouteCont
 )
 
 type Command struct {
@@ -21,13 +21,13 @@ type Command struct {
 
 type Response struct {
 	Result string
-	Err    error
+	Err    string
 }
 
 var (
-	ErrInvalidArgType     = errors.New("Invalid argument type")
-	ErrInvalidManagerType = errors.New("Inavalid container manager type")
-	ErrKeyNotFound        = errors.New("All required keys not found")
+	ErrUnknownCmd     = errors.New("Unknown command")
+	ErrUnknownManager = errors.New("Inavalid container manager type")
+	ErrKeyNotFound    = errors.New("All required keys not found")
 )
 
 type CManager interface {
@@ -41,23 +41,23 @@ type CManager interface {
 
 func (s *State) handleCommand(cmd *Command) *Response {
 	switch cmd.Code {
-	case StartClient:
+	case CmdStartClient:
 		return s.mger.AddClient(cmd)
-	case StartServer:
+	case CmdStartServer:
 		return s.mger.AddServer(cmd)
-	case StartSnort:
+	case CmdStartSnort:
 		r := s.mger.AddSnort(cmd)
-		if r.Err != nil {
+		if r.Err != "" {
 			return r
 		}
 
 		s.uchan <- r.Result
 		return r
-	case StopCont:
+	case CmdStopCont:
 		return s.mger.Stop(cmd)
-	case RouteCont:
+	case CmdRouteCont:
 		return s.mger.Route(cmd)
 	default:
-		return &Response{Err: ErrInvalidArgType}
+		return &Response{Err: ErrUnknownCmd.Error()}
 	}
 }

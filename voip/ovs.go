@@ -2,43 +2,55 @@ package voip
 
 import (
 	"errors"
+	"fmt"
+	"log"
 	"os/exec"
 )
 
 const (
-	OVS_BRIDGE = "ovsbr"
-	INET       = "173.16.1.1"
-	NETMASK    = "255.255.255.0"
+	OVS_BRIDGE  = "ovsbr"
+	INET_PREFIX = "173.16.1."
+	INET        = INET_PREFIX + "1"
+	NETMASK     = "255.255.255.0"
 )
 
 var (
 	ErrOvsNotFound = errors.New("openvswitch is not installed")
 )
 
+var (
+	cur_ip = 1
+)
+
+func rund(cmd string) ([]byte, error) {
+	log.Println("[_INFO] running command", cmd)
+	return exec.Command("/bin/sh", "-c", cmd).Output()
+}
+
 func ovsInit() error {
-	undo := false
-
-	out, err := exec.Command("/bin/sh", "-c", "which ovs-vsctl").Output()
+	out, err := rund("which ovs-vsctl")
 	if err != nil || string(out) == "" {
 		return ErrOvsNotFound
 	}
 
-	out, err = exec.Command("/bin/sh", "-c", "which ovs-docker").Output()
+	out, err = rund("which ovs-docker")
 	if err != nil || string(out) == "" {
 		return ErrOvsNotFound
 	}
 
-	out, err = exec.Command("/bin/sh", "-c", "which ovs-ofctl").Output()
+	out, err = rund("which ovs-ofctl")
 	if err != nil || string(out) == "" {
 		return ErrOvsNotFound
 	}
 
-	_, err = exec.Command("/bin/sh", "-c", "sudo ovs-vsctl br-exists "+OVS_BRIDGE).Output()
-	if err != nil {
+	_, err = rund("sudo ovs-vsctl br-exists " + OVS_BRIDGE)
+	if err == nil {
+		log.Println("[_WARN] ovs bridge alredy exists, skipping")
 		return nil
 	}
 
-	out, err = exec.Command("/bin/sh", "-c", "sudo ovs-vsctl add-br "+OVS_BRIDGE).Output()
+	undo := false
+	out, err = rund("sudo ovs-vsctl add-br " + OVS_BRIDGE)
 	if err != nil {
 		return err
 	}
@@ -48,35 +60,65 @@ func ovsInit() error {
 		}
 	}()
 
-	out, err = exec.Command("/bin/sh", "-c", "sudo ifconfig "+OVS_BRIDGE+" "+INET+" netmask "+NETMASK+" up").Output()
+	out, err = rund("sudo ifconfig " + OVS_BRIDGE + " " + INET + " netmask " + NETMASK + " up")
 	if err != nil {
 		undo = true
 		return err
 	}
+	log.Println("[_INFO] created ovs bridge", OVS_BRIDGE)
 
 	return nil
 }
 
 func ovsDestroy() {
-	exec.Command("/bin/sh", "-c", "sudo ovs-vsctl del-br "+OVS_BRIDGE).Output()
-	// TODO: clean up routes
+	rund("sudo ovs-vsctl del-br " + OVS_BRIDGE)
+	// TODO: clean up routes & ovs ports
+	log.Println("[_INFO] deleted ovs bridge")
 }
 
-func ovsSetupNetwork(id, mac string) error {
-	_, err := exec.Command("/bin/sh", "-c", "sudo ovs-docker add-port "+OVS_BRIDGE+" eth0 "+id+" --macaddress "+mac).Output()
-	return err
+func ovsSetupNetwork(id string) (string, string, error) {
+	mac, err := GetMacAddress()
+	if err != nil {
+		return "", "", err
+	}
+
+	cur_ip += 1
+	ip := INET_PREFIX + fmt.Sprint(cur_ip)
+
+	_, err = rund("sudo ovs-docker add-port " + OVS_BRIDGE + " eth0 " + id + " --ipaddress=" + ip + " --macaddress=" + mac)
+	if err != nil {
+		cur_ip -= 1
+	}
+
+	return ip, mac, err
+}
+
+func ovsUSetupNetwork(id string) {
+	_, err := rund("sudo ovs-docker del-port " + OVS_BRIDGE + " eth0 " + id)
+	if err != nil {
+		log.Println("[_INFO] unable to remove interface from container", id, err)
+	} else {
+		log.Println("[_INFO] removed interface from container", id)
+	}
 }
 
 // we only route at client
-// TODO: only works on one host (local)
+// TODO: only works for one host (local)
 func ovsRoute(cmac, rmac, smac string) error {
 	cmd := "sudo ovs-ofctl add-flow " + OVS_BRIDGE + " priority=100,ip,dl_src=" + cmac
 	cmd += ",dl_dst=" + smac + ",actions=mod_dl_dst=" + rmac + ",resubmit:" + cmac
-	_, err := exec.Command("/bin/sh", "-c", cmd).Output()
+	_, err := rund(cmd)
+	if err != nil {
+		log.Println("[_WARN] unable to setup route for ", rmac, err)
+	}
+
 	return err
 }
 
 func ovsDeRoute(cmac string) {
 	cmd := "sudo ovs-ofctl del-flows " + OVS_BRIDGE + " dl_src=" + cmac
-	exec.Command("/bin/sh", "-c", cmd).Output()
+	_, err := rund(cmd)
+	if err != nil {
+		log.Println("[_WARN] unable to desetup route for", cmac, err)
+	}
 }

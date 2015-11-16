@@ -60,7 +60,7 @@ func (v *VoipLine) Stop() {
 	<-v.quit
 
 	os.Remove(v.sockfile)
-	log.Println("[INFO] exiting voip loop")
+	log.Println("[_INFO] exiting voip loop")
 }
 
 func (v *VoipLine) GetDB() string {
@@ -72,7 +72,7 @@ func (v *VoipLine) Update(points models.Points) {
 }
 
 func (v *VoipLine) accept() {
-	log.Println("[INFO] listening voip commands on", v.sockfile)
+	log.Println("[_INFO] listening voip commands on", v.sockfile)
 
 	for {
 		conn, err := v.sock.AcceptUnix()
@@ -82,12 +82,12 @@ func (v *VoipLine) accept() {
 				close(v.quit)
 				return
 			default:
-				log.Println("[WARN] error accepting:", err)
+				log.Println("[_WARN] error accepting:", err)
 				continue
 			}
 		}
 
-		log.Println("[INFO] Received request from", conn.RemoteAddr())
+		log.Println("[_INFO] Received request from", conn.RemoteAddr())
 		v.handleRequest(conn)
 	}
 }
@@ -97,23 +97,17 @@ func (v *VoipLine) handleRequest(conn *net.UnixConn) {
 	enc := gob.NewEncoder(conn)
 	dec := gob.NewDecoder(conn)
 
-	for {
-		var cmd Command
-		switch err := dec.Decode(&cmd); err {
-		case nil:
-			response := v.state.handleCommand(&cmd)
-			err := enc.Encode(response)
-			if err != nil {
-				log.Println("[WARN] error in sending voip data:", err)
-			} else {
-				continue
-			}
-		case io.EOF:
-			log.Println("[INFO] connection with", conn.RemoteAddr(), "closed")
-			return
-		default:
-			log.Println("[WARN] unexpected data:", err)
-			return
+	var cmd Command
+	switch err := dec.Decode(&cmd); err {
+	case nil:
+		response := v.state.handleCommand(&cmd)
+		err := enc.Encode(response)
+		if err != nil {
+			log.Println("[_WARN] error in sending voip data:", err)
 		}
+	case io.EOF:
+		log.Println("[_INFO] connection with", conn.RemoteAddr(), "closed")
+	default:
+		log.Println("[_WARN] unexpected data:", err)
 	}
 }
