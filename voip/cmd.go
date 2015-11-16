@@ -10,6 +10,7 @@ const (
 	StartClient CCode = iota
 	StartServer
 	StartSnort
+	StopCont
 	RouteCont
 )
 
@@ -19,8 +20,8 @@ type Command struct {
 }
 
 type Response struct {
-	result string
-	err    error
+	Result string
+	Err    error
 }
 
 var (
@@ -46,15 +47,17 @@ func (s *State) handleCommand(cmd *Command) *Response {
 		return s.mger.AddServer(cmd)
 	case StartSnort:
 		r := s.mger.AddSnort(cmd)
-		if r.err != nil {
+		if r.Err != nil {
 			return r
 		}
 
-		s.uchan <- r.result
+		s.uchan <- r.Result
 		return r
+	case StopCont:
+		return s.mger.Stop(cmd)
 	case RouteCont:
 		return s.mger.Route(cmd)
 	default:
-		return &Response{err: ErrInvalidArgType}
+		return &Response{Err: ErrInvalidArgType}
 	}
 }

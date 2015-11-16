@@ -98,10 +98,10 @@ func (v *VoipLine) handleRequest(conn *net.UnixConn) {
 	dec := gob.NewDecoder(conn)
 
 	for {
-		var cmd *Command
-		switch err := dec.Decode(cmd); err {
+		var cmd Command
+		switch err := dec.Decode(&cmd); err {
 		case nil:
-			response := v.state.handleCommand(cmd)
+			response := v.state.handleCommand(&cmd)
 			err := enc.Encode(response)
 			if err != nil {
 				log.Println("[WARN] error in sending voip data:", err)

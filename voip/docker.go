@@ -71,25 +71,25 @@ func (dc *DockerCManager) AddServer(cmd *Command) *Response {
 	kv := cmd.KeyVal
 	host, ok := kv["host"]
 	if !ok {
-		return &Response{err: ErrKeyNotFound}
+		return &Response{Err: ErrKeyNotFound}
 	}
 	hclient, ok := dc.dclients[host]
 	if !ok {
-		return &Response{err: ErrHostNotFound}
+		return &Response{Err: ErrHostNotFound}
 	}
 
 	sshares, ok := kv["shares"]
 	if !ok {
-		return &Response{err: ErrKeyNotFound}
+		return &Response{Err: ErrKeyNotFound}
 	}
 	shares, err := strconv.ParseInt(sshares, 10, 64)
 	if err != nil {
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 
 	mac, err := GetMacAddress()
 	if err != nil {
-		return &Response{err: ErrNoMacAddress}
+		return &Response{Err: ErrNoMacAddress}
 	}
 
 	cid, err := hclient.CreateContainer(&dockerclient.ContainerConfig{
@@ -98,7 +98,7 @@ func (dc *DockerCManager) AddServer(cmd *Command) *Response {
 		NetworkDisabled: true,
 	}, fmt.Sprintf("sipp-server-%s", uuid.NewV1()))
 	if err != nil {
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 	defer func() {
 		if undo {
@@ -110,7 +110,7 @@ func (dc *DockerCManager) AddServer(cmd *Command) *Response {
 	err = ovsSetupNetwork(cid, mac)
 	if err != nil {
 		undo = true
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 
 	// add node to the pipe
@@ -118,7 +118,7 @@ func (dc *DockerCManager) AddServer(cmd *Command) *Response {
 	err = dc.pipe.NewNode(cid, info.NetworkSettings.IPAddress, mac, host)
 	if err != nil {
 		undo = true
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 
 	err = hclient.StartContainer(cid, &dockerclient.HostConfig{
@@ -127,10 +127,10 @@ func (dc *DockerCManager) AddServer(cmd *Command) *Response {
 	})
 	if err != nil {
 		undo = true
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 
-	return &Response{result: cid}
+	return &Response{Result: cid}
 }
 
 func (dc *DockerCManager) AddClient(cmd *Command) *Response {
@@ -140,35 +140,35 @@ func (dc *DockerCManager) AddClient(cmd *Command) *Response {
 	kv := cmd.KeyVal
 	host, ok := kv["host"]
 	if !ok {
-		return &Response{err: ErrKeyNotFound}
+		return &Response{Err: ErrKeyNotFound}
 	}
 	hclient, ok := dc.dclients[host]
 	if !ok {
-		return &Response{err: ErrHostNotFound}
+		return &Response{Err: ErrHostNotFound}
 	}
 
 	sshares, ok := kv["shares"]
 	if !ok {
-		return &Response{err: ErrKeyNotFound}
+		return &Response{Err: ErrKeyNotFound}
 	}
 	shares, err := strconv.ParseInt(sshares, 10, 64)
 	if err != nil {
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 
 	serverid, ok := kv["server"]
 	if !ok {
-		return &Response{err: ErrKeyNotFound}
+		return &Response{Err: ErrKeyNotFound}
 	}
 
 	server_ip, err := dc.pipe.GetIPAddress(serverid)
 	if err != nil {
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 
 	mac, err := GetMacAddress()
 	if err != nil {
-		return &Response{err: ErrNoMacAddress}
+		return &Response{Err: ErrNoMacAddress}
 	}
 
 	args := "-buff_size " + SIPP_BUFF_SIZE + " -sn uac -r 0 " + server_ip + ":5060"
@@ -178,7 +178,7 @@ func (dc *DockerCManager) AddClient(cmd *Command) *Response {
 		NetworkDisabled: true,
 	}, fmt.Sprintf("sipp-client-%s", uuid.NewV1()))
 	if err != nil {
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 	defer func() {
 		if undo {
@@ -190,7 +190,7 @@ func (dc *DockerCManager) AddClient(cmd *Command) *Response {
 	err = ovsSetupNetwork(sid, mac)
 	if err != nil {
 		undo = true
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 
 	// add node to the pipe
@@ -198,7 +198,7 @@ func (dc *DockerCManager) AddClient(cmd *Command) *Response {
 	err = dc.pipe.NewNode(sid, info.NetworkSettings.IPAddress, mac, host)
 	if err != nil {
 		undo = true
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 
 	err = hclient.StartContainer(sid, &dockerclient.HostConfig{
@@ -207,10 +207,10 @@ func (dc *DockerCManager) AddClient(cmd *Command) *Response {
 	})
 	if err != nil {
 		undo = true
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 
-	return &Response{result: sid}
+	return &Response{Result: sid}
 }
 
 func (dc *DockerCManager) AddSnort(cmd *Command) *Response {
@@ -220,25 +220,25 @@ func (dc *DockerCManager) AddSnort(cmd *Command) *Response {
 	kv := cmd.KeyVal
 	host, ok := kv["host"]
 	if !ok {
-		return &Response{err: ErrKeyNotFound}
+		return &Response{Err: ErrKeyNotFound}
 	}
 	hclient, ok := dc.dclients[host]
 	if !ok {
-		return &Response{err: ErrHostNotFound}
+		return &Response{Err: ErrHostNotFound}
 	}
 
 	sshares, ok := kv["shares"]
 	if !ok {
-		return &Response{err: ErrKeyNotFound}
+		return &Response{Err: ErrKeyNotFound}
 	}
 	shares, err := strconv.ParseInt(sshares, 10, 64)
 	if err != nil {
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 
 	mac, err := GetMacAddress()
 	if err != nil {
-		return &Response{err: ErrNoMacAddress}
+		return &Response{Err: ErrNoMacAddress}
 	}
 
 	id, err := hclient.CreateContainer(&dockerclient.ContainerConfig{
@@ -246,7 +246,7 @@ func (dc *DockerCManager) AddSnort(cmd *Command) *Response {
 		NetworkDisabled: true,
 	}, fmt.Sprintf("snort-%s", uuid.NewV1()))
 	if err != nil {
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 	defer func() {
 		if undo {
@@ -258,7 +258,7 @@ func (dc *DockerCManager) AddSnort(cmd *Command) *Response {
 	err = ovsSetupNetwork(id, mac)
 	if err != nil {
 		undo = true
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 
 	// add node to the pipe
@@ -266,7 +266,7 @@ func (dc *DockerCManager) AddSnort(cmd *Command) *Response {
 	err = dc.pipe.NewNode(id, info.NetworkSettings.IPAddress, mac, host)
 	if err != nil {
 		undo = true
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 
 	err = hclient.StartContainer(id, &dockerclient.HostConfig{
@@ -276,10 +276,10 @@ func (dc *DockerCManager) AddSnort(cmd *Command) *Response {
 	})
 	if err != nil {
 		undo = true
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 
-	return &Response{result: id}
+	return &Response{Result: id}
 }
 
 func (dc *DockerCManager) Stop(cmd *Command) *Response {
@@ -287,11 +287,11 @@ func (dc *DockerCManager) Stop(cmd *Command) *Response {
 	kv := cmd.KeyVal
 	cont, ok := kv["cont"]
 	if !ok {
-		return &Response{err: ErrKeyNotFound}
+		return &Response{Err: ErrKeyNotFound}
 	}
 	host, err := dc.pipe.GetHost(cont)
 	if err != nil {
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 	dclient, ok := dc.dclients[host]
 	if !ok {
@@ -301,22 +301,22 @@ func (dc *DockerCManager) Stop(cmd *Command) *Response {
 
 	err = dclient.StopContainer(cont, STOP_TIMEOUT)
 	if err != nil {
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 
 	err = dclient.RemoveContainer(cont, true, true)
 	if err != nil {
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 
 	err = dc.pipe.DelNode(cont)
 	if err != nil {
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 
 	cmac, err := dc.pipe.GetMacAddress(cont)
 	if err != nil {
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 	ovsDeRoute(cmac)
 
@@ -328,37 +328,52 @@ func (dc *DockerCManager) Route(cmd *Command) *Response {
 	kv := cmd.KeyVal
 	client, ok := kv["client"]
 	if !ok {
-		return &Response{err: ErrKeyNotFound}
+		return &Response{Err: ErrKeyNotFound}
 	}
 
 	cmac, err := dc.pipe.GetMacAddress(client)
 	if err != nil {
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 
 	server, ok := kv["server"]
 	if !ok {
-		return &Response{err: ErrKeyNotFound}
+		return &Response{Err: ErrKeyNotFound}
 	}
 
 	smac, err := dc.pipe.GetMacAddress(server)
 	if err != nil {
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 
 	router, ok := kv["router"]
 	if !ok {
-		return &Response{err: ErrKeyNotFound}
+		return &Response{Err: ErrKeyNotFound}
 	}
 
 	rmac, err := dc.pipe.GetMacAddress(router)
 	if err != nil {
-		return &Response{err: err}
+		return &Response{Err: err}
 	}
 
 	err = ovsRoute(cmac, rmac, smac)
 	if err != nil {
-		return &Response{err: err}
+		return &Response{Err: err}
+	}
+
+	err = dc.pipe.AddNode(client, "")
+	if err != nil {
+		panic(err)
+	}
+
+	err = dc.pipe.AddNode(router, client)
+	if err != nil {
+		panic(err)
+	}
+
+	err = dc.pipe.AddNode(server, router)
+	if err != nil {
+		panic(err)
 	}
 
 	return &Response{}
