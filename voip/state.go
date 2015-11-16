@@ -11,15 +11,15 @@ const (
 	UBUFSIZE = 100
 )
 
-type Container struct {
+type MContainer struct {
 	id      string
 	inflow  *TimeData
 	outflow *TimeData
 	cpuload *TimeData
 }
 
-func NewContainer(id string, s, d int) *Container {
-	return &Container{
+func NewMContainer(id string, s, d int) *MContainer {
+	return &MContainer{
 		id:      id,
 		inflow:  NewTimeData(s, d),
 		outflow: NewTimeData(s, d),
@@ -29,9 +29,8 @@ func NewContainer(id string, s, d int) *Container {
 
 type State struct {
 	// control parameters
-	nfconts map[string]*Container
+	nfconts map[string]*MContainer
 	uchan   chan string
-	rchan   chan bool
 	mger    CManager
 
 	// config parameters
@@ -86,9 +85,8 @@ func NewState(config *goconfig.ConfigFile) (*State, error) {
 	}
 
 	return &State{
-		nfconts: make(map[string]*Container),
+		nfconts: make(map[string]*MContainer),
 		uchan:   make(chan string, UBUFSIZE),
-		rchan:   make(chan bool, UBUFSIZE),
 		mger:    mger,
 
 		step_length:     step_length,
@@ -101,7 +99,7 @@ func NewState(config *goconfig.ConfigFile) (*State, error) {
 
 func (s *State) Destroy() {
 	close(s.uchan)
-	close(s.rchan)
+	s.mger.Destroy()
 }
 
 func (s *State) Trigger() {
@@ -111,7 +109,7 @@ func (s *State) Trigger() {
 func (s *State) Update(points models.Points) {
 	select {
 	case nf := <-s.uchan:
-		s.nfconts[nf] = NewContainer(nf, s.step_length, s.period_length)
+		s.nfconts[nf] = NewMContainer(nf, s.step_length, s.period_length)
 	default:
 	}
 

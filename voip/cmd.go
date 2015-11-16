@@ -24,8 +24,9 @@ type Response struct {
 }
 
 var (
-	ErrInvalidArgType     = errors.New("invalid argument type")
+	ErrInvalidArgType     = errors.New("Invalid argument type")
 	ErrInvalidManagerType = errors.New("Inavalid container manager type")
+	ErrKeyNotFound        = errors.New("All required keys not found")
 )
 
 type CManager interface {
@@ -34,6 +35,7 @@ type CManager interface {
 	AddSnort(cmd *Command) *Response
 	Stop(cmd *Command) *Response
 	Route(cmd *Command) *Response
+	Destroy()
 }
 
 func (s *State) handleCommand(cmd *Command) *Response {
@@ -43,7 +45,13 @@ func (s *State) handleCommand(cmd *Command) *Response {
 	case StartServer:
 		return s.mger.AddServer(cmd)
 	case StartSnort:
-		return s.mger.AddSnort(cmd)
+		r := s.mger.AddSnort(cmd)
+		if r.err != nil {
+			return r
+		}
+
+		s.uchan <- r.result
+		return r
 	case RouteCont:
 		return s.mger.Route(cmd)
 	default:
