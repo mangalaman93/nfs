@@ -20,9 +20,12 @@ type MContainer struct {
 	cpuload *TimeData
 
 	// algorithm vars
-	ploadr float32
-	ibytes int64
-	csum   int64
+	ploadr  float64
+	prxr    float64
+	ptxr    float64
+	ibytes  int64
+	tibytes int64
+	csum    int64
 
 	// control vars
 	share int64
@@ -61,11 +64,11 @@ func (m *MContainer) AddPoint(table int, point models.Point) {
 	}
 }
 
-func (m *MContainer) Trigger() {
+func (m *MContainer) Trigger() int64 {
 	for {
-		rx, rxr, ok1 := m.inflow.Next()
+		_, rxr, ok1 := m.inflow.Next()
 		tx, txr, ok2 := m.outflow.Next()
-		cp, cpr, ok3 := m.inflow.Next()
+		_, cpr, ok3 := m.inflow.Next()
 		if !ok1 || !ok2 || !ok3 {
 			break
 		}
@@ -73,10 +76,12 @@ func (m *MContainer) Trigger() {
 		// init, only once
 		if m.ibytes == 0 {
 			m.ibytes = tx
+			m.tibytes = tx
 		}
 
 		// we have three points rx, tx, cp synchronized within <step>
 		duration := m.inflow.AfterD()
+		ninetyp := float64(m.share) / 1024 * 90
 		switch {
 		// 1 interval is over, we look at only inflow for consistency
 		case duration > 0:
@@ -87,9 +92,20 @@ func (m *MContainer) Trigger() {
 			// reinitialize
 			m.csum = 0
 			m.ibytes = tx
+		case m.ploadr > ninetyp && m.ploadr < ninetyp:
+			m.csum += (tx - m.tibytes) * int64(m.prxr/(m.prxr-m.ptxr))
+			m.tibytes = tx
+		case m.ploadr < ninetyp && m.ploadr > ninetyp:
+			m.tibytes = tx
+		case m.ploadr > ninetyp && m.ploadr > ninetyp:
+		case m.ploadr < ninetyp && cpr < ninetyp:
 		default:
 		}
 
 		m.ploadr = cpr
+		m.prxr = rxr
+		m.ptxr = txr
 	}
+
+	return m.share
 }

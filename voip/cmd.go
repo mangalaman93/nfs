@@ -36,6 +36,7 @@ type CManager interface {
 	AddSnort(cmd *Command) (*Response, string)
 	Stop(cmd *Command) *Response
 	Route(cmd *Command) *Response
+	SetShares(id string, shares int64)
 	Destroy()
 }
 

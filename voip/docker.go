@@ -202,6 +202,7 @@ func (dc *DockerCManager) runc(host, prefix string, cconf *docker.ContainerConfi
 	return &Response{Result: cid}
 }
 
+// TODO: tell control loop to stop monitoring this container
 func (dc *DockerCManager) Stop(cmd *Command) *Response {
 	kv := cmd.KeyVal
 	cont, ok := kv["cont"]
@@ -292,4 +293,19 @@ func (dc *DockerCManager) Route(cmd *Command) *Response {
 
 	log.Println("[_INFO] setup route", cmac, "->", rmac, "->", smac)
 	return &Response{}
+}
+
+func (dc *DockerCManager) SetShares(id string, shares int64) {
+	host, err := dc.pipe.GetHost(id)
+	if err != nil {
+		log.Println("[_WARN] unable to set shares for container", id, "err:", err)
+		return
+	}
+
+	_, ok := dc.dclients[host]
+	if !ok {
+		panic(!ok)
+	}
+
+	// TODO
 }

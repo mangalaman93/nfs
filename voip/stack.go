@@ -53,3 +53,6 @@ func (dc *StackCManager) Stop(cmd *Command) *Response {
 func (dc *StackCManager) Route(cmd *Command) *Response {
 	return nil
 }
+
+func (dc *StackCManager) SetShares(id string, shares int64) {
+}

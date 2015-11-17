@@ -95,7 +95,8 @@ func (s *State) Destroy() {
 
 func (s *State) Trigger() {
 	for _, cont := range s.nfconts {
-		cont.Trigger()
+		shares := cont.Trigger()
+		s.mger.SetShares(cont.id, shares)
 	}
 }
 

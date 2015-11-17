@@ -39,7 +39,7 @@ func (t *TimeData) AddPoint(ts time.Time, val int64) {
 	t.ts.Push(&ts)
 }
 
-func (t *TimeData) Next() (int64, float32, bool) {
+func (t *TimeData) Next() (int64, float64, bool) {
 	t.bts.Add(time.Millisecond * time.Duration(t.step))
 	t.since += t.step
 
@@ -62,7 +62,7 @@ func (t *TimeData) Next() (int64, float32, bool) {
 		if t.pval == 0 || tdiff == 0 {
 			return cval, 0, true
 		} else {
-			return cval, float32(cval-t.pval) / float32(tdiff), true
+			return cval, float64(cval-t.pval) / float64(tdiff), true
 		}
 
 	}
