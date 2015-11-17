@@ -1,28 +1,23 @@
-package voip
+package queue
 
 import (
-	"errors"
+	"time"
 )
 
-var (
-	ErrEmptyQueue = errors.New("Queue is empty")
-)
-
-// see reference https://github.com/ErikDubbelboer/ringqueue
-type RQueue struct {
-	vals []int64
+type TimeQueue struct {
+	vals []*time.Time
 	head int
 	tail int
 	size int
 }
 
-func NewRQueue(capacity int) *RQueue {
-	return &RQueue{
-		vals: make([]int64, capacity),
+func NewTimeQueue(capacity int) *TimeQueue {
+	return &TimeQueue{
+		vals: make([]*time.Time, capacity),
 	}
 }
 
-func (q *RQueue) Push(val int64) {
+func (q *TimeQueue) Push(val *time.Time) {
 	if q.size == len(q.vals) {
 		q.resize()
 	}
@@ -32,9 +27,17 @@ func (q *RQueue) Push(val int64) {
 	q.size++
 }
 
-func (q *RQueue) Pop() (int64, error) {
+func (q *TimeQueue) Head() (*time.Time, error) {
 	if q.size == 0 {
-		return 0, ErrEmptyQueue
+		return nil, ErrEmptyQueue
+	}
+
+	return q.vals[q.head], nil
+}
+
+func (q *TimeQueue) Pop() (*time.Time, error) {
+	if q.size == 0 {
+		return nil, ErrEmptyQueue
 	}
 
 	val := q.vals[q.head]
@@ -44,15 +47,15 @@ func (q *RQueue) Pop() (int64, error) {
 	return val, nil
 }
 
-func (q *RQueue) Size() int {
+func (q *TimeQueue) Size() int {
 	return q.size
 }
 
 // we only increase size (do not decrease)
-func (q *RQueue) resize() {
+func (q *TimeQueue) resize() {
 	newsize := q.size * 2
 
-	vals := make([]int64, newsize)
+	vals := make([]*time.Time, newsize)
 	if q.head < q.tail {
 		copy(vals, q.vals[q.head:q.tail])
 	} else {
