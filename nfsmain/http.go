@@ -22,6 +22,8 @@ func defaultHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("[_INFO] received data from", r.Host)
+
 	precision := r.FormValue("precision")
 	if precision == "" {
 		precision = "n"

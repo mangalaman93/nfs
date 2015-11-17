@@ -72,7 +72,6 @@ func ovsInit() error {
 
 func ovsDestroy() {
 	rund("sudo ovs-vsctl del-br " + OVS_BRIDGE)
-	// TODO: clean up routes & ovs ports
 	log.Println("[_INFO] deleted ovs bridge")
 }
 
@@ -85,7 +84,7 @@ func ovsSetupNetwork(id string) (string, string, error) {
 	cur_ip += 1
 	ip := INET_PREFIX + fmt.Sprint(cur_ip)
 
-	_, err = rund("sudo ovs-docker add-port " + OVS_BRIDGE + " eth0 " + id + " --ipaddress=" + ip + " --macaddress=" + mac)
+	_, err = rund("sudo ovs-docker add-port " + OVS_BRIDGE + " eth0 " + id + " --ipaddress=" + ip + "/24 --macaddress=" + mac)
 	if err != nil {
 		cur_ip -= 1
 	}
