@@ -120,17 +120,17 @@ func (dc *DockerCManager) AddClient(cmd *Command) *Response {
 	})
 }
 
-func (dc *DockerCManager) AddSnort(cmd *Command) *Response {
+func (dc *DockerCManager) AddSnort(cmd *Command) (*Response, string) {
 	kv := cmd.KeyVal
 	host, ok1 := kv["host"]
 	sshares, ok2 := kv["shares"]
 	if !ok1 || !ok2 {
-		return &Response{Err: ErrKeyNotFound.Error()}
+		return &Response{Err: ErrKeyNotFound.Error()}, ""
 	}
 
 	shares, err := strconv.ParseInt(sshares, 10, 64)
 	if err != nil {
-		return &Response{Err: err.Error()}
+		return &Response{Err: err.Error()}, ""
 	}
 
 	return dc.runc(host, "snort", &docker.ContainerConfig{
@@ -140,7 +140,7 @@ func (dc *DockerCManager) AddSnort(cmd *Command) *Response {
 		CapAdd:    []string{"NET_ADMIN"},
 		CpuShares: shares,
 		CpuQuota:  int64(shares / 1024 * cpu_period),
-	})
+	}), sshares
 }
 
 func (dc *DockerCManager) runc(host, prefix string, cconf *docker.ContainerConfig, hconf *docker.HostConfig) *Response {

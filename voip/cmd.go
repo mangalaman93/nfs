@@ -33,7 +33,7 @@ var (
 type CManager interface {
 	AddServer(cmd *Command) *Response
 	AddClient(cmd *Command) *Response
-	AddSnort(cmd *Command) *Response
+	AddSnort(cmd *Command) (*Response, string)
 	Stop(cmd *Command) *Response
 	Route(cmd *Command) *Response
 	Destroy()
@@ -46,12 +46,13 @@ func (s *State) handleCommand(cmd *Command) *Response {
 	case CmdStartServer:
 		return s.mger.AddServer(cmd)
 	case CmdStartSnort:
-		r := s.mger.AddSnort(cmd)
+		r, shares := s.mger.AddSnort(cmd)
 		if r.Err != "" {
 			return r
 		}
 
 		s.uchan <- r.Result
+		s.uchan <- shares
 		return r
 	case CmdStopCont:
 		return s.mger.Stop(cmd)

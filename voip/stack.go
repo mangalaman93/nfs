@@ -42,8 +42,8 @@ func (dc *StackCManager) AddClient(cmd *Command) *Response {
 	return nil
 }
 
-func (dc *StackCManager) AddSnort(cmd *Command) *Response {
-	return nil
+func (dc *StackCManager) AddSnort(cmd *Command) (*Response, string) {
+	return nil, ""
 }
 
 func (dc *StackCManager) Stop(cmd *Command) *Response {

@@ -12,18 +12,18 @@ type TimeData struct {
 
 	// parameters
 	bts  time.Time
-	step int
-	wl   int
+	step int64
+	wl   int64
 
 	// vars
-	since int
+	since int64
 	pval  int64
 	pts   *time.Time
 }
 
 // all data in ms
-func NewTimeData(step int, duration int, bts time.Time) *TimeData {
-	length := duration / step * 2
+func NewTimeData(step int64, duration int64, bts time.Time) *TimeData {
+	length := int(duration / step * 2)
 
 	return &TimeData{
 		data: queue.NewWordQueue(length),
@@ -68,7 +68,7 @@ func (t *TimeData) Next() (int64, float32, bool) {
 	}
 }
 
-func (t *TimeData) AfterD() int {
+func (t *TimeData) AfterD() int64 {
 	if t.since < t.wl {
 		return 0
 	}

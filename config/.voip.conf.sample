@@ -11,6 +11,7 @@ unix_sock=/home/ubuntu/nfs/nfs.sock
 [VOIP.CONTROL]
 step_length=500
 period_length=10000
+reference=1048576
 cpu_table=cpu_usage_total
 rx_table=rx_bytes
 tx_table=tx_bytes
