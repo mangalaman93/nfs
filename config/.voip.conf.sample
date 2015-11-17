@@ -9,11 +9,11 @@ db=cadvisor
 unix_sock=/home/ubuntu/nfs/nfs.sock
 
 [VOIP.CONTROL]
-step_length=100
-period_length=600000
+step_length=500
+period_length=10000
 cpu_table=cpu_usage_total
-rx_table=rx_packets
-tx_table=tx_packets
+rx_table=rx_bytes
+tx_table=tx_bytes
 
 [VOIP.MANAGER]
 type=docker
