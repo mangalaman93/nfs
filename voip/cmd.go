@@ -12,6 +12,9 @@ const (
 	CmdStartSnort
 	CmdStopCont
 	CmdRouteCont
+
+	CmdNewMContainer
+	CmdDelMContainer
 )
 
 type Command struct {
@@ -52,10 +55,23 @@ func (s *State) handleCommand(cmd *Command) *Response {
 			return r
 		}
 
-		s.uchan <- r.Result
-		s.uchan <- shares
+		s.uchan <- &Command{
+			Code: CmdNewMContainer,
+			KeyVal: map[string]string{
+				"id":     r.Result,
+				"shares": shares,
+			},
+		}
+
 		return r
 	case CmdStopCont:
+		// TODO: if `cont` key doesn't exist
+		// TODO: we send command for all containers even when it may not be monitored
+		s.uchan <- &Command{
+			Code:   CmdDelMContainer,
+			KeyVal: map[string]string{"id": cmd.KeyVal["cont"]},
+		}
+
 		return s.mger.Stop(cmd)
 	case CmdRouteCont:
 		return s.mger.Route(cmd)

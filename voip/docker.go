@@ -202,7 +202,6 @@ func (dc *DockerCManager) runc(host, prefix string, cconf *docker.ContainerConfi
 	return &Response{Result: cid}
 }
 
-// TODO: tell control loop to stop monitoring this container
 func (dc *DockerCManager) Stop(cmd *Command) *Response {
 	kv := cmd.KeyVal
 	cont, ok := kv["cont"]

@@ -14,7 +14,7 @@ const (
 type State struct {
 	// control parameters
 	nfconts map[string]*MContainer
-	uchan   chan string
+	uchan   chan *Command
 	mger    CManager
 
 	// config parameters
@@ -76,7 +76,7 @@ func NewState(config *goconfig.ConfigFile) (*State, error) {
 
 	return &State{
 		nfconts: make(map[string]*MContainer),
-		uchan:   make(chan string, ubufsize),
+		uchan:   make(chan *Command, ubufsize),
 		mger:    mger,
 
 		step_length:     step_length,
@@ -103,8 +103,13 @@ func (s *State) Trigger() {
 func (s *State) Update(points models.Points) {
 	select {
 	case nf := <-s.uchan:
-		shares, _ := strconv.ParseInt(<-s.uchan, 10, 64)
-		s.nfconts[nf] = NewMContainer(nf, s.step_length, s.period_length, shares, s.reference)
+		if nf.Code == CmdNewMContainer {
+			id := nf.KeyVal["id"]
+			ishares, _ := strconv.ParseInt(nf.KeyVal["shares"], 10, 64)
+			s.nfconts[id] = NewMContainer(id, s.step_length, s.period_length, ishares, s.reference)
+		} else if nf.Code == CmdDelMContainer {
+			delete(s.nfconts, nf.KeyVal["id"])
+		}
 	default:
 	}
 
