@@ -7,7 +7,7 @@ import (
 	"strconv"
 
 	"github.com/Unknwon/goconfig"
-	docker "github.com/samalba/dockerclient"
+	docker "github.com/mangalaman93/dockerclient"
 	"github.com/satori/go.uuid"
 )
 
@@ -302,10 +302,17 @@ func (dc *DockerCManager) SetShares(id string, shares int64) {
 		return
 	}
 
-	_, ok := dc.dclients[host]
+	hclient, ok := dc.dclients[host]
 	if !ok {
 		panic(!ok)
 	}
 
-	// TODO
+	if err := hclient.SetContainer(id, &docker.HostConfig{
+		CpuShares: shares,
+		CpuQuota:  int64(shares / 1024 * cpu_period),
+	}); err != nil {
+		log.Println("[_WARN] unable to set new shares")
+	}
+
+	log.Println("[_INFO] set cpu limit for container", id, "to", shares)
 }
