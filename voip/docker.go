@@ -14,6 +14,7 @@ import (
 const (
 	img_sipp       = "mangalaman93/sipp"
 	img_snort      = "mangalaman93/snort"
+	img_cadvisor   = "mangalaman93/cadvisor"
 	sipp_buff_size = "1048576"
 	cpu_period     = 100000
 	stop_timeout   = 4
@@ -30,15 +31,42 @@ type DockerCManager struct {
 }
 
 func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
+	undo := true
+
 	hosts := config.GetKeyList("VOIP.TOPO")
 	if hosts == nil {
 		return nil, errors.New("error while finding host list")
 	}
 
-	err := ovsInit()
+	iuser, err := config.GetValue("VOIP.DB", "user")
 	if err != nil {
 		return nil, err
 	}
+
+	ipass, err := config.GetValue("VOIP.DB", "password")
+	if err != nil {
+		return nil, err
+	}
+
+	ihost, err := config.GetValue("VOIP.DB", "host")
+	if err != nil {
+		return nil, err
+	}
+
+	iport, err := config.GetValue("VOIP.DB", "port")
+	if err != nil {
+		return nil, err
+	}
+
+	err = ovsInit()
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if undo {
+			ovsDestroy()
+		}
+	}()
 
 	dclients := make(map[string]*docker.DockerClient)
 	for _, host := range hosts {
@@ -54,8 +82,40 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 
 		dclients[host] = c
 		log.Println("[_INFO] added host", host)
+
+		id, err := c.CreateContainer(&docker.ContainerConfig{
+			Image: img_cadvisor,
+			Cmd: []string{"-storage_driver=influxdb",
+				"-storage_driver_user=" + iuser,
+				"-storage_driver_password=" + ipass,
+				"-storage_driver_host=" + ihost + ":" + iport},
+		}, "cadvisor-"+host)
+		if err != nil {
+			return nil, err
+		}
+		defer func(contid string, client *docker.DockerClient) {
+			if undo {
+				client.RemoveContainer(contid, true, true)
+			}
+		}(id, c)
+
+		err = c.StartContainer(id, &docker.HostConfig{
+			NetworkMode: "host",
+			Binds:       []string{"/:/rootfs:ro", "/var/run:/var/run:rw", "/sys:/sys:ro", "/var/lib/docker/:/var/lib/docker:ro"},
+		})
+		if err != nil {
+			return nil, err
+		}
+		defer func(contid string, client *docker.DockerClient) {
+			if undo {
+				client.StopContainer(contid, stop_timeout)
+			}
+		}(id, c)
+
+		log.Println("[_INFO] running cadvisor on host", host)
 	}
 
+	undo = false
 	return &DockerCManager{
 		dclients: dclients,
 		pipe:     NewPipeLine(),
@@ -65,6 +125,19 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 func (dc *DockerCManager) Destroy() {
 	dc.pipe.Destroy(dc)
 	ovsDestroy()
+
+	for host, client := range dc.dclients {
+		contid := "cadvisor-" + host
+
+		if err := client.StopContainer(contid, stop_timeout); err != nil {
+			log.Println("[_WARN] unable to stop container", contid)
+		} else {
+			log.Println("[_INFO] container with id", contid, "stopped")
+			client.RemoveContainer(contid, true, true)
+		}
+
+		log.Println("[_INFO] stopped cadvisor on host", host)
+	}
 }
 
 func (dc *DockerCManager) AddServer(cmd *Command) *Response {
@@ -150,7 +223,7 @@ func (dc *DockerCManager) runc(host, prefix string, cconf *docker.ContainerConfi
 	}
 
 	// rollback in case!
-	undo := false
+	undo := true
 
 	cid, err := hclient.CreateContainer(cconf, fmt.Sprintf("%s-%s", prefix, uuid.NewV1()))
 	if err != nil {
@@ -165,7 +238,6 @@ func (dc *DockerCManager) runc(host, prefix string, cconf *docker.ContainerConfi
 
 	err = hclient.StartContainer(cid, hconf)
 	if err != nil {
-		undo = true
 		return &Response{Err: err.Error()}
 	}
 	log.Println("[_INFO] container with id", cid)
@@ -178,7 +250,6 @@ func (dc *DockerCManager) runc(host, prefix string, cconf *docker.ContainerConfi
 	// setup ovs network
 	ip, mac, err := ovsSetupNetwork(cid)
 	if err != nil {
-		undo = true
 		return &Response{Err: err.Error()}
 	}
 	log.Println("[_INFO] setup network for container", cid, "ip:", ip, "mac:", mac)
@@ -190,7 +261,6 @@ func (dc *DockerCManager) runc(host, prefix string, cconf *docker.ContainerConfi
 
 	err = dc.pipe.NewNode(cid, ip, mac, host)
 	if err != nil {
-		undo = true
 		return &Response{Err: err.Error()}
 	}
 	defer func() {
@@ -199,6 +269,7 @@ func (dc *DockerCManager) runc(host, prefix string, cconf *docker.ContainerConfi
 		}
 	}()
 
+	undo = false
 	return &Response{Result: cid}
 }
 

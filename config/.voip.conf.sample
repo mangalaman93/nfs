@@ -22,3 +22,10 @@ type=docker
 [VOIP.TOPO]
 kepler=10.0.0.1:2575
 titan=10.0.0.2:2575
+
+; it may as well be a proxy
+[VOIP.DB]
+user=voip
+password=voip
+host=10.0.0.1
+port=8000

@@ -49,7 +49,7 @@ func ovsInit() error {
 		return nil
 	}
 
-	undo := false
+	undo := true
 	out, err = rund("sudo ovs-vsctl add-br " + OVS_BRIDGE)
 	if err != nil {
 		return err
@@ -62,11 +62,11 @@ func ovsInit() error {
 
 	out, err = rund("sudo ifconfig " + OVS_BRIDGE + " " + INET + " netmask " + NETMASK + " up")
 	if err != nil {
-		undo = true
 		return err
 	}
 	log.Println("[_INFO] created ovs bridge", OVS_BRIDGE)
 
+	undo = false
 	return nil
 }
 
