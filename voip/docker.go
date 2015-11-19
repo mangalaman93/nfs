@@ -12,12 +12,13 @@ import (
 )
 
 const (
-	img_sipp       = "mangalaman93/sipp"
-	img_snort      = "mangalaman93/snort"
-	img_cadvisor   = "mangalaman93/cadvisor"
-	sipp_buff_size = "1048576"
-	cpu_period     = 100000
-	stop_timeout   = 4
+	img_sipp                 = "mangalaman93/sipp"
+	img_snort                = "mangalaman93/snort"
+	img_cadvisor             = "mangalaman93/cadvisor"
+	sipp_buff_size           = "1048576"
+	cpu_period               = 100000
+	stop_timeout             = 5
+	cadvisor_buffer_duration = "5s"
 )
 
 var (
@@ -95,7 +96,8 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 			Cmd: []string{"-storage_driver=influxdb",
 				"-storage_driver_user=" + iuser,
 				"-storage_driver_password=" + ipass,
-				"-storage_driver_host=" + chost + ":" + cport},
+				"-storage_driver_host=" + chost + ":" + cport,
+				"storage_driver_buffer_duration=" + cadvisor_buffer_duration},
 		}, "cadvisor-"+host)
 		if err != nil {
 			return nil, err
@@ -161,12 +163,12 @@ func (dc *DockerCManager) AddServer(cmd *Command) *Response {
 	}
 
 	return dc.runc(host, "sipp-server", &docker.ContainerConfig{
-		Env:             []string{"ARGS=\"-buff_size " + sipp_buff_size + " -sn uas\""},
+		Env:             []string{"ARGS=-buff_size " + sipp_buff_size + " -sn uas"},
 		Image:           img_sipp,
 		NetworkDisabled: true,
 	}, &docker.HostConfig{
 		CpuShares: shares,
-		CpuQuota:  int64(shares / 1024 * cpu_period),
+		CpuQuota:  int64(shares * cpu_period / 1024),
 	})
 }
 
@@ -191,12 +193,12 @@ func (dc *DockerCManager) AddClient(cmd *Command) *Response {
 
 	args := "-buff_size " + sipp_buff_size + " -sn uac -r 0 " + server_ip + ":5060"
 	return dc.runc(host, "sipp-client", &docker.ContainerConfig{
-		Env:             []string{"ARGS=\"" + args + "\""},
+		Env:             []string{"ARGS=" + args},
 		Image:           img_sipp,
 		NetworkDisabled: true,
 	}, &docker.HostConfig{
 		CpuShares: shares,
-		CpuQuota:  int64(shares / 1024 * cpu_period),
+		CpuQuota:  int64(shares * cpu_period / 1024),
 	})
 }
 
@@ -219,7 +221,7 @@ func (dc *DockerCManager) AddSnort(cmd *Command) (*Response, string) {
 	}, &docker.HostConfig{
 		CapAdd:    []string{"NET_ADMIN"},
 		CpuShares: shares,
-		CpuQuota:  int64(shares / 1024 * cpu_period),
+		CpuQuota:  int64(shares * cpu_period / 1024),
 	}), sshares
 }
 
@@ -386,7 +388,7 @@ func (dc *DockerCManager) SetShares(id string, shares int64) {
 
 	if err := hclient.SetContainer(id, &docker.HostConfig{
 		CpuShares: shares,
-		CpuQuota:  int64(shares / 1024 * cpu_period),
+		CpuQuota:  int64(shares * cpu_period / 1024),
 	}); err != nil {
 		log.Println("[_WARN] unable to set new shares")
 	}

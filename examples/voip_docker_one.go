@@ -47,7 +47,7 @@ func main() {
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	timeout := time.After(10 * 60 * time.Second)
+	timeout := time.After(10 * 600 * time.Second)
 	select {
 	case <-sigs:
 	case <-timeout:

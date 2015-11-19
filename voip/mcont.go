@@ -81,7 +81,7 @@ func (m *MContainer) Trigger() int64 {
 
 		// we have three points rx, tx, cp synchronized within <step>
 		duration := m.inflow.AfterD()
-		ninetyp := float64(m.share) / 1024 * 90
+		ninetyp := float64(m.share) * 90 / 1024
 		switch {
 		// 1 interval is over, we look at only inflow for consistency
 		case duration > 0:
