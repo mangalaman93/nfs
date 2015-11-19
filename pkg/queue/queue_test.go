@@ -7,11 +7,11 @@ import (
 
 /* Example benchmark results [Intel® Core™ i7-3612QM CPU @ 2.10GHz × 8] Ubuntu 15.10, 8GB
 PASS
-BenchmarkWordAdd-8   	100000000	        19.2 ns/op	      21 B/op	       0 allocs/op
-BenchmarkWordRemove-8	50000000	        28.8 ns/op	       0 B/op	       0 allocs/op
-BenchmarkTimeAdd-8   	10000000	       227 ns/op	      26 B/op	       0 allocs/op
-BenchmarkTimeRemove-8	50000000	        30.6 ns/op	       0 B/op	       0 allocs/op
-ok  	github.com/mangalaman93/nfs/pkg/queue	8.731s
+BenchmarkWordAdd-8   	100000000	        21.1 ns/op	      21 B/op	       0 allocs/op
+BenchmarkWordRemove-8	50000000	        29.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkTimeAdd-8   	20000000	       162 ns/op	      80 B/op	       0 allocs/op
+BenchmarkTimeRemove-8	50000000	        31.4 ns/op	       0 B/op	       0 allocs/op
+ok  	github.com/mangalaman93/nfs/pkg/queue	9.326s
 */
 
 func TestWordQueue(t *testing.T) {
@@ -74,14 +74,13 @@ func TestTimeQueue(t *testing.T) {
 		}
 
 		for i := zerotime; i.Before(j); i = i.Add(time.Duration(1)) {
-			k := i
-			q.Push(&k)
+			q.Push(i)
 		}
 
 		for i := zerotime; i.Before(j); i = i.Add(time.Duration(1)) {
 			if x, err := q.Pop(); err != nil {
 				t.Fatal("expected an element")
-			} else if *x != i {
+			} else if x != i {
 				t.Fatalf("expected %s got %s", i, x)
 			}
 		}
@@ -91,15 +90,14 @@ func TestTimeQueue(t *testing.T) {
 	r := zerotime
 	for j := 0; j < 100; j++ {
 		for i := 0; i < 4; i++ {
-			p := a
-			q.Push(&p)
+			q.Push(a)
 			a = a.Add(time.Duration(1))
 		}
 
 		for i := 0; i < 2; i++ {
 			if x, err := q.Pop(); err != nil {
 				t.Fatal("expected an element")
-			} else if *x != r {
+			} else if x != r {
 				t.Fatalf("expected %d got %d", r, x)
 			}
 
@@ -140,7 +138,7 @@ func BenchmarkTimeAdd(b *testing.B) {
 	zerotime := time.Now()
 
 	for i := 0; i < b.N; i++ {
-		q.Push(&zerotime)
+		q.Push(zerotime)
 	}
 }
 
@@ -150,7 +148,7 @@ func BenchmarkTimeRemove(b *testing.B) {
 	zerotime := time.Now()
 
 	for i := 0; i < b.N; i++ {
-		q.Push(&zerotime)
+		q.Push(zerotime)
 
 		if q.Size() > 10 {
 			q.Pop()

@@ -18,7 +18,7 @@ type TimeData struct {
 	// vars
 	since int64
 	pval  int64
-	pts   *time.Time
+	pts   time.Time
 }
 
 // all data in ms
@@ -36,7 +36,7 @@ func NewTimeData(step int64, duration int64, bts time.Time) *TimeData {
 
 func (t *TimeData) AddPoint(ts time.Time, val int64) {
 	t.data.Push(val)
-	t.ts.Push(&ts)
+	t.ts.Push(ts)
 }
 
 func (t *TimeData) Next() (int64, float64, bool) {
@@ -58,7 +58,7 @@ func (t *TimeData) Next() (int64, float64, bool) {
 		}
 
 		// otherwise we have the latest timestamp
-		tdiff := cts.Sub(*t.pts) * 10e9
+		tdiff := cts.Sub(t.pts) * 10e9
 		if t.pval == 0 || tdiff == 0 {
 			return cval, 0, true
 		} else {
