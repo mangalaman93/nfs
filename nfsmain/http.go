@@ -1,10 +1,14 @@
 package nfsmain
 
 import (
+	"bytes"
 	"compress/gzip"
+	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
+	"net/http/httputil"
 	"time"
 
 	"github.com/Unknwon/goconfig"
@@ -103,5 +107,40 @@ func writeErr(w http.ResponseWriter, err error) {
 	w.Write([]byte("\n"))
 }
 
+type nopCloser struct {
+	io.Reader
+}
+
+func (nopCloser) Close() error { return nil }
+
+// ref:https://github.com/chrislusf/teeproxy/blob/master/teeproxy.go
 func (h *Handler) duplicateRequest(r *http.Request) {
+	body := new(bytes.Buffer)
+	io.Copy(body, r.Body)
+
+	request := &http.Request{
+		Method:        r.Method,
+		URL:           r.URL,
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Header:        r.Header,
+		Body:          nopCloser{body},
+		Host:          r.Host,
+		ContentLength: r.ContentLength,
+	}
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Println("Recovered in duplicateRequest", r)
+			}
+		}()
+
+		con, _ := net.DialTimeout("tcp", h.endpoint, time.Duration(1*time.Second))
+		hcon := httputil.NewClientConn(con, nil)
+		hcon.Write(request)
+		hcon.Read(request)
+		hcon.Close()
+	}()
 }
