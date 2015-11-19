@@ -10,6 +10,10 @@ import (
 	"github.com/mangalaman93/nfs/client"
 )
 
+const (
+	localhost = "local"
+)
+
 func main() {
 	vc, err := client.NewVoipClient("/home/ubuntu/nfs/.voip.conf")
 	if err != nil {
@@ -17,21 +21,21 @@ func main() {
 	}
 	defer vc.Close()
 
-	server, err := vc.AddServer(1024)
+	server, err := vc.AddServer(localhost, 1024)
 	if err != nil {
 		panic(err)
 	}
 	defer vc.Stop(server)
 	fmt.Println("started server:", server)
 
-	snort, err := vc.AddSnort(256)
+	snort, err := vc.AddSnort(localhost, 256)
 	if err != nil {
 		panic(err)
 	}
 	defer vc.Stop(snort)
 	fmt.Println("started snort:", snort)
 
-	client, err := vc.AddClient(server, 1024)
+	client, err := vc.AddClient(localhost, 1024, server)
 	if err != nil {
 		panic(err)
 	}
@@ -42,7 +46,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	} else {
-		fmt.Println("route setup")
+		fmt.Println("routes are setup")
 	}
 
 	sigs := make(chan os.Signal, 1)
@@ -52,5 +56,4 @@ func main() {
 	case <-sigs:
 	case <-timeout:
 	}
-	fmt.Println("done with the experiment")
 }

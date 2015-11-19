@@ -7,15 +7,15 @@ import (
 
 /* Example benchmark results [Intel® Core™ i7-3612QM CPU @ 2.10GHz × 8] Ubuntu 15.10, 8GB
 PASS
-BenchmarkWordAdd-8   	100000000	        21.1 ns/op	      21 B/op	       0 allocs/op
-BenchmarkWordRemove-8	50000000	        29.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkIntAdd-8   	100000000	        21.1 ns/op	      21 B/op	       0 allocs/op
+BenchmarkIntRemove-8	50000000	        29.9 ns/op	       0 B/op	       0 allocs/op
 BenchmarkTimeAdd-8   	20000000	       162 ns/op	      80 B/op	       0 allocs/op
 BenchmarkTimeRemove-8	50000000	        31.4 ns/op	       0 B/op	       0 allocs/op
 ok  	github.com/mangalaman93/nfs/pkg/queue	9.326s
 */
 
-func TestWordQueue(t *testing.T) {
-	q := NewWordQueue(2)
+func TestIntQueue(t *testing.T) {
+	q := NewIntQueue(2)
 
 	for j := int64(0); j < 100; j++ {
 		if q.Size() != 0 {
@@ -110,18 +110,18 @@ func TestTimeQueue(t *testing.T) {
 	}
 }
 
-func BenchmarkWordAdd(b *testing.B) {
+func BenchmarkIntAdd(b *testing.B) {
 	b.ReportAllocs()
-	q := NewWordQueue(2)
+	q := NewIntQueue(2)
 
 	for i := int64(0); i < int64(b.N); i++ {
 		q.Push(i)
 	}
 }
 
-func BenchmarkWordRemove(b *testing.B) {
+func BenchmarkIntRemove(b *testing.B) {
 	b.ReportAllocs()
-	q := NewWordQueue(2)
+	q := NewIntQueue(2)
 
 	for i := int64(0); i < int64(b.N); i++ {
 		q.Push(i)

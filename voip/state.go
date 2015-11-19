@@ -8,13 +8,13 @@ import (
 )
 
 const (
-	ubufsize = 100
+	REQ_BUF_SIZE = 100
 )
 
 type State struct {
 	// control parameters
 	nfconts map[string]*MContainer
-	uchan   chan *Command
+	rchan   chan *Request
 	mger    CManager
 
 	// config parameters
@@ -31,27 +31,22 @@ func NewState(config *goconfig.ConfigFile) (*State, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	period_length, err := config.Int64("VOIP.CONTROL", "period_length")
 	if err != nil {
 		return nil, err
 	}
-
 	reference, err := config.Int64("VOIP.CONTROL", "reference")
 	if err != nil {
 		return nil, err
 	}
-
 	cpu_table, err := config.GetValue("VOIP.CONTROL", "cpu_table")
 	if err != nil {
 		return nil, err
 	}
-
 	rx_table, err := config.GetValue("VOIP.CONTROL", "rx_table")
 	if err != nil {
 		return nil, err
 	}
-
 	tx_table, err := config.GetValue("VOIP.CONTROL", "tx_table")
 	if err != nil {
 		return nil, err
@@ -75,10 +70,9 @@ func NewState(config *goconfig.ConfigFile) (*State, error) {
 	}
 
 	return &State{
-		nfconts: make(map[string]*MContainer),
-		uchan:   make(chan *Command, ubufsize),
-		mger:    mger,
-
+		nfconts:         make(map[string]*MContainer),
+		rchan:           make(chan *Request, REQ_BUF_SIZE),
+		mger:            mger,
 		step_length:     step_length,
 		period_length:   period_length,
 		reference:       reference,
@@ -89,7 +83,7 @@ func NewState(config *goconfig.ConfigFile) (*State, error) {
 }
 
 func (s *State) Destroy() {
-	close(s.uchan)
+	close(s.rchan)
 	s.mger.Destroy()
 }
 
@@ -102,12 +96,12 @@ func (s *State) Trigger() {
 
 func (s *State) Update(points models.Points) {
 	select {
-	case nf := <-s.uchan:
-		if nf.Code == CmdNewMContainer {
+	case nf := <-s.rchan:
+		if nf.Code == reqNewMContainer {
 			id := nf.KeyVal["id"]
 			ishares, _ := strconv.ParseInt(nf.KeyVal["shares"], 10, 64)
 			s.nfconts[id] = NewMContainer(id, s.step_length, s.period_length, ishares, s.reference)
-		} else if nf.Code == CmdDelMContainer {
+		} else if nf.Code == reqDelMContainer {
 			delete(s.nfconts, nf.KeyVal["id"])
 		}
 	default:
@@ -120,7 +114,7 @@ func (s *State) Update(points models.Points) {
 	for _, point := range points {
 		cont, ok := s.nfconts[point.Tags()["container_name"]]
 		if !ok {
-			return
+			continue
 		}
 
 		switch point.Name() {

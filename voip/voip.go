@@ -20,26 +20,32 @@ type VoipLine struct {
 }
 
 func NewVoipLine(config *goconfig.ConfigFile) (*VoipLine, error) {
+	undo := true
+
 	state, err := NewState(config)
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if undo {
+			state.Destroy()
+		}
+	}()
 
 	sockfile, err := config.GetValue("VOIP", "unix_sock")
 	if err != nil {
 		return nil, err
 	}
-
 	db, err := config.GetValue("VOIP", "db")
 	if err != nil {
 		return nil, err
 	}
-
 	sock, err := net.ListenUnix("unix", &net.UnixAddr{sockfile, "unix"})
 	if err != nil {
 		return nil, err
 	}
 
+	undo = false
 	return &VoipLine{
 		database: db,
 		sockfile: sockfile,
@@ -60,7 +66,7 @@ func (v *VoipLine) Stop() {
 	<-v.quit
 
 	os.Remove(v.sockfile)
-	log.Println("[_INFO] exiting voip loop")
+	log.Println("[INFO] exiting voip loop")
 }
 
 func (v *VoipLine) GetDB() string {
@@ -72,7 +78,7 @@ func (v *VoipLine) Update(points models.Points) {
 }
 
 func (v *VoipLine) accept() {
-	log.Println("[_INFO] listening voip commands on", v.sockfile)
+	log.Println("[INFO] listening voip commands on", v.sockfile)
 
 	for {
 		conn, err := v.sock.AcceptUnix()
@@ -82,12 +88,12 @@ func (v *VoipLine) accept() {
 				close(v.quit)
 				return
 			default:
-				log.Println("[_WARN] error accepting:", err)
+				log.Println("[WARN] error accepting:", err)
 				continue
 			}
 		}
 
-		log.Println("[_INFO] Received request from", conn.RemoteAddr())
+		log.Println("[INFO] Received request from", conn.RemoteAddr())
 		v.handleRequest(conn)
 	}
 }
@@ -97,17 +103,17 @@ func (v *VoipLine) handleRequest(conn *net.UnixConn) {
 	enc := gob.NewEncoder(conn)
 	dec := gob.NewDecoder(conn)
 
-	var cmd Command
+	var cmd Request
 	switch err := dec.Decode(&cmd); err {
 	case nil:
-		response := v.state.handleCommand(&cmd)
+		response := v.state.handleRequest(&cmd)
 		err := enc.Encode(response)
 		if err != nil {
-			log.Println("[_WARN] error in sending voip data:", err)
+			log.Println("[WARN] error in sending voip data:", err)
 		}
 	case io.EOF:
-		log.Println("[_INFO] connection with", conn.RemoteAddr(), "closed")
+		log.Println("[INFO] connection with", conn.RemoteAddr(), "closed")
 	default:
-		log.Println("[_WARN] unexpected data:", err)
+		log.Println("[WARN] unexpected data:", err)
 	}
 }

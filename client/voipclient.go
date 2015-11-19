@@ -15,7 +15,6 @@ type VoipClient struct {
 }
 
 func NewVoipClient(cfile string) (*VoipClient, error) {
-	// read configuration file
 	config, err := goconfig.LoadConfigFile(cfile)
 	if err != nil {
 		return nil, err
@@ -31,43 +30,43 @@ func NewVoipClient(cfile string) (*VoipClient, error) {
 	}, nil
 }
 
-func (c *VoipClient) Close() {
+func (v *VoipClient) Close() {
 }
 
-func (c *VoipClient) AddServer(shares int) (string, error) {
-	return c.runc(&voip.Command{
-		Code: voip.CmdStartServer,
+func (v *VoipClient) AddServer(host string, shares int) (string, error) {
+	return v.doRequest(&voip.Request{
+		Code: voip.ReqStartServer,
 		KeyVal: map[string]string{
-			"host":   "local",
+			"host":   host,
 			"shares": strconv.Itoa(shares),
 		},
 	})
 }
 
-func (c *VoipClient) AddClient(server string, shares int) (string, error) {
-	return c.runc(&voip.Command{
-		Code: voip.CmdStartClient,
+func (v *VoipClient) AddClient(host string, shares int, server string) (string, error) {
+	return v.doRequest(&voip.Request{
+		Code: voip.ReqStartClient,
 		KeyVal: map[string]string{
-			"host":   "local",
+			"host":   host,
 			"shares": strconv.Itoa(shares),
 			"server": server,
 		},
 	})
 }
 
-func (c *VoipClient) AddSnort(shares int) (string, error) {
-	return c.runc(&voip.Command{
-		Code: voip.CmdStartSnort,
+func (v *VoipClient) AddSnort(host string, shares int) (string, error) {
+	return v.doRequest(&voip.Request{
+		Code: voip.ReqStartSnort,
 		KeyVal: map[string]string{
-			"host":   "local",
+			"host":   host,
 			"shares": strconv.Itoa(shares),
 		},
 	})
 }
 
-func (c *VoipClient) Stop(cont string) {
-	_, err := c.runc(&voip.Command{
-		Code: voip.CmdStopCont,
+func (v *VoipClient) Stop(cont string) {
+	_, err := v.doRequest(&voip.Request{
+		Code: voip.ReqStopCont,
 		KeyVal: map[string]string{
 			"cont": cont,
 		},
@@ -78,9 +77,9 @@ func (c *VoipClient) Stop(cont string) {
 	}
 }
 
-func (c *VoipClient) Route(client, router, server string) error {
-	_, err := c.runc(&voip.Command{
-		Code: voip.CmdRouteCont,
+func (v *VoipClient) Route(client, router, server string) error {
+	_, err := v.doRequest(&voip.Request{
+		Code: voip.ReqRouteCont,
 		KeyVal: map[string]string{
 			"client": client,
 			"server": server,
@@ -91,21 +90,21 @@ func (c *VoipClient) Route(client, router, server string) error {
 	return err
 }
 
-func (c *VoipClient) runc(cmd *voip.Command) (string, error) {
-	conn, err := net.DialUnix("unix", nil, &net.UnixAddr{c.sockfile, "unix"})
+func (v *VoipClient) doRequest(req *voip.Request) (string, error) {
+	conn, err := net.DialUnix("unix", nil, &net.UnixAddr{v.sockfile, "unix"})
 	if err != nil {
 		return "", err
 	}
 	defer conn.Close()
+
 	enc := gob.NewEncoder(conn)
 	dec := gob.NewDecoder(conn)
-
-	enc.Encode(cmd)
-	var res voip.Response
-	dec.Decode(&res)
-	if res.Err != "" {
-		return "", fmt.Errorf("%s", res.Err)
+	enc.Encode(req)
+	var resp voip.Response
+	dec.Decode(&resp)
+	if resp.Err != "" {
+		return "", fmt.Errorf("%s", resp.Err)
 	}
 
-	return res.Result, nil
+	return resp.Result, nil
 }

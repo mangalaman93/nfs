@@ -4,21 +4,25 @@ import (
 	"errors"
 )
 
-type CCode int
-
 const (
-	CmdStartClient CCode = iota
-	CmdStartServer
-	CmdStartSnort
-	CmdStopCont
-	CmdRouteCont
+	ReqStartClient = iota
+	ReqStartServer
+	ReqStartSnort
+	ReqStopCont
+	ReqRouteCont
 
-	CmdNewMContainer
-	CmdDelMContainer
+	reqNewMContainer
+	reqDelMContainer
 )
 
-type Command struct {
-	Code   CCode
+var (
+	ErrUnknownReq     = errors.New("Unknown request")
+	ErrUnknownManager = errors.New("Inavalid container manager type")
+	ErrKeyNotFound    = errors.New("All required keys not found")
+)
+
+type Request struct {
+	Code   int
 	KeyVal map[string]string
 }
 
@@ -27,55 +31,50 @@ type Response struct {
 	Err    string
 }
 
-var (
-	ErrUnknownCmd     = errors.New("Unknown command")
-	ErrUnknownManager = errors.New("Inavalid container manager type")
-	ErrKeyNotFound    = errors.New("All required keys not found")
-)
-
 type CManager interface {
-	AddServer(cmd *Command) *Response
-	AddClient(cmd *Command) *Response
-	AddSnort(cmd *Command) (*Response, string)
-	Stop(cmd *Command) *Response
-	Route(cmd *Command) *Response
+	AddServer(req *Request) *Response
+	AddClient(req *Request) *Response
+	AddSnort(req *Request) (*Response, string)
+	Stop(req *Request) *Response
+	Route(req *Request) *Response
 	SetShares(id string, shares int64)
 	Destroy()
 }
 
-func (s *State) handleCommand(cmd *Command) *Response {
-	switch cmd.Code {
-	case CmdStartClient:
-		return s.mger.AddClient(cmd)
-	case CmdStartServer:
-		return s.mger.AddServer(cmd)
-	case CmdStartSnort:
-		r, shares := s.mger.AddSnort(cmd)
-		if r.Err != "" {
-			return r
+func (s *State) handleRequest(req *Request) *Response {
+	switch req.Code {
+	case ReqStartClient:
+		return s.mger.AddClient(req)
+	case ReqStartServer:
+		return s.mger.AddServer(req)
+	case ReqStartSnort:
+		resp, shares := s.mger.AddSnort(req)
+		if resp.Err != "" {
+			return resp
 		}
-
-		s.uchan <- &Command{
-			Code: CmdNewMContainer,
+		s.rchan <- &Request{
+			Code: reqNewMContainer,
 			KeyVal: map[string]string{
-				"id":     r.Result,
+				"id":     resp.Result,
 				"shares": shares,
 			},
 		}
-
-		return r
-	case CmdStopCont:
-		// TODO: if `cont` key doesn't exist
-		// TODO: we send command for all containers even when it may not be monitored
-		s.uchan <- &Command{
-			Code:   CmdDelMContainer,
-			KeyVal: map[string]string{"id": cmd.KeyVal["cont"]},
+		return resp
+	case ReqStopCont:
+		// TODO: we send request for all containers even when it may not be monitored
+		kv := req.KeyVal
+		_, ok := kv["cont"]
+		if !ok {
+			return &Response{Err: ErrKeyNotFound.Error()}
 		}
-
-		return s.mger.Stop(cmd)
-	case CmdRouteCont:
-		return s.mger.Route(cmd)
+		s.rchan <- &Request{
+			Code:   reqDelMContainer,
+			KeyVal: map[string]string{"id": req.KeyVal["cont"]},
+		}
+		return s.mger.Stop(req)
+	case ReqRouteCont:
+		return s.mger.Route(req)
 	default:
-		return &Response{Err: ErrUnknownCmd.Error()}
+		return &Response{Err: ErrUnknownReq.Error()}
 	}
 }

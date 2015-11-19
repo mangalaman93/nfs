@@ -29,7 +29,7 @@ func NewStackCManager(config *goconfig.ConfigFile) (*StackCManager, error) {
 func (dc *StackCManager) Destroy() {
 }
 
-func (s *StackCManager) AddServer(cmd *Command) *Response {
+func (s *StackCManager) AddServer(req *Request) *Response {
 	// server, err := servers.Create(client, servers.CreateOpts{
 	// 	Name:      "My new server!",
 	// 	FlavorRef: "flavor_id",
@@ -38,19 +38,19 @@ func (s *StackCManager) AddServer(cmd *Command) *Response {
 	return nil
 }
 
-func (dc *StackCManager) AddClient(cmd *Command) *Response {
+func (dc *StackCManager) AddClient(req *Request) *Response {
 	return nil
 }
 
-func (dc *StackCManager) AddSnort(cmd *Command) (*Response, string) {
+func (dc *StackCManager) AddSnort(req *Request) (*Response, string) {
 	return nil, ""
 }
 
-func (dc *StackCManager) Stop(cmd *Command) *Response {
+func (dc *StackCManager) Stop(req *Request) *Response {
 	return nil
 }
 
-func (dc *StackCManager) Route(cmd *Command) *Response {
+func (dc *StackCManager) Route(req *Request) *Response {
 	return nil
 }
 

@@ -28,11 +28,11 @@ type MContainer struct {
 	csum    int64
 
 	// control vars
-	share int64
-	ref   int64
+	shares int64
+	ref    int64
 }
 
-func NewMContainer(id string, step, wl, share, ref int64) *MContainer {
+func NewMContainer(id string, step, wl, shares, ref int64) *MContainer {
 	curtime := time.Now()
 
 	return &MContainer{
@@ -40,18 +40,19 @@ func NewMContainer(id string, step, wl, share, ref int64) *MContainer {
 		inflow:  NewTimeData(step, wl, curtime),
 		outflow: NewTimeData(step, wl, curtime),
 		cpuload: NewTimeData(step, wl, curtime),
-		share:   share,
+		shares:  shares,
 		ref:     ref,
 	}
 }
 
 func (m *MContainer) AddPoint(table int, point models.Point) {
-	val, ok := point.Fields()["value"].(int64)
+	fval, ok := point.Fields()["value"].(float64)
 	if !ok {
-		log.Println("[_WARN] unknown data type!")
+		log.Println("[WARN] unknown data type!")
 		return
 	}
 
+	val := int64(fval)
 	switch table {
 	case RX_TABLE:
 		m.inflow.AddPoint(point.Time(), val)
@@ -60,7 +61,7 @@ func (m *MContainer) AddPoint(table int, point models.Point) {
 	case CPU_TABLE:
 		m.cpuload.AddPoint(point.Time(), val)
 	default:
-		panic("not reachable!")
+		panic("NOT REACHABLE")
 	}
 }
 
@@ -73,14 +74,13 @@ func (m *MContainer) Trigger() int64 {
 			break
 		}
 
-		// init, only once
 		if m.ibytes == 0 {
 			m.ibytes = tx
 			m.tibytes = tx
 		}
 
 		// we have three points rx, tx, cp synchronized within <step>
-		ninetyp := float64(m.share) * 90 / 1024
+		ninetyp := float64(m.shares) * 90 / 1024
 		switch {
 		case m.ploadr > ninetyp && m.ploadr < ninetyp:
 			m.csum += (tx - m.tibytes) * int64(m.prxr/(m.prxr-m.ptxr))
@@ -94,11 +94,10 @@ func (m *MContainer) Trigger() int64 {
 		// 1 interval is over, we look at only inflow for consistency
 		duration := float64(m.inflow.AfterD())
 		if duration > 0 {
-			dprime := float64(m.csum) / float64(m.share) / duration
+			dprime := float64(m.csum) / float64(m.shares) / duration
 			delta := float64(tx-m.ibytes) / duration
-			m.share -= int64((float64(m.ref) - delta) / dprime)
 
-			// reinitialize
+			m.shares -= int64((float64(m.ref) - delta) / dprime)
 			m.csum = 0
 			m.ibytes = tx
 		}
@@ -108,5 +107,5 @@ func (m *MContainer) Trigger() int64 {
 		m.ptxr = txr
 	}
 
-	return m.share
+	return m.shares
 }

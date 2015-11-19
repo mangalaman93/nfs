@@ -22,19 +22,17 @@ func Start(config *goconfig.ConfigFile) error {
 	if err != nil {
 		return err
 	}
-
 	apps = make(map[string]AppLine)
 	apps[vl.GetDB()] = vl
-	log.Println("[_INFO] registered db:", vl.GetDB(), "with VoipLine instance")
+	log.Println("[INFO] registered db:", vl.GetDB(), "with VoipLine instance")
 
 	h, err := NewHandler(config, apps)
 	if err != nil {
 		return err
 	}
-
-	go vl.Start()
 	go http.ListenAndServe(":"+port, h)
-	log.Println("[_INFO] listening for data over line protocol on port", port)
+	go vl.Start()
+	log.Println("[INFO] listening for data over line protocol on port", port)
 	return nil
 }
 
@@ -46,5 +44,5 @@ func Stop() {
 	// TODO: for now, we don't know how to stop http
 	// listener and we do not want to get into
 	// complications of creating listener ourselves
-	log.Println("[_INFO] exiting control loop")
+	log.Println("[INFO] exiting control loop")
 }

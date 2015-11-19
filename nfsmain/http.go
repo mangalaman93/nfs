@@ -23,7 +23,6 @@ type Handler struct {
 
 func NewHandler(config *goconfig.ConfigFile, apps map[string]AppLine) (*Handler, error) {
 	var h *Handler
-
 	if s, _ := config.GetSection("VOIP.DB"); s == nil {
 		h = &Handler{
 			apps: apps,
@@ -50,10 +49,8 @@ func NewHandler(config *goconfig.ConfigFile, apps map[string]AppLine) (*Handler,
 	return h, nil
 }
 
-func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Println("[_INFO] received data from", r.Host)
-	h.duplicateRequest(r)
-
+func (h Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	r := h.duplicateRequest(req)
 	precision := r.FormValue("precision")
 	if precision == "" {
 		precision = "n"
@@ -64,7 +61,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Content-encoding") == "gzip" {
 		unzip, err := gzip.NewReader(r.Body)
 		if err != nil {
-			log.Println("[_WARN] unable to unzip body:", err)
+			log.Println("[WARN] unable to unzip body:", err)
 			writeErr(w, err)
 			return
 		}
@@ -75,7 +72,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	database := r.FormValue("db")
 	app, ok := h.apps[database]
 	if !ok {
-		log.Println("[_WARN] unregistered database:", database)
+		log.Println("[WARN] unregistered database:", database)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -85,11 +82,10 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-
 	points, err := models.ParsePointsWithPrecision(data, time.Now().UTC(), precision)
 	if err != nil {
 		if err.Error() == "EOF" {
-			log.Println("[_INFO] closing connection with", r.Host)
+			log.Println("[INFO] closing connection with", r.Host)
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -114,9 +110,12 @@ type nopCloser struct {
 func (nopCloser) Close() error { return nil }
 
 // ref:https://github.com/chrislusf/teeproxy/blob/master/teeproxy.go
-func (h *Handler) duplicateRequest(r *http.Request) {
-	body := new(bytes.Buffer)
-	io.Copy(body, r.Body)
+func (h *Handler) duplicateRequest(r *http.Request) *http.Request {
+	buf1 := new(bytes.Buffer)
+	buf2 := new(bytes.Buffer)
+	w := io.MultiWriter(buf1, buf2)
+	io.Copy(w, r.Body)
+	defer r.Body.Close()
 
 	request := &http.Request{
 		Method:        r.Method,
@@ -125,7 +124,18 @@ func (h *Handler) duplicateRequest(r *http.Request) {
 		ProtoMajor:    1,
 		ProtoMinor:    1,
 		Header:        r.Header,
-		Body:          nopCloser{body},
+		Body:          nopCloser{buf1},
+		Host:          r.Host,
+		ContentLength: r.ContentLength,
+	}
+	drequest := &http.Request{
+		Method:        r.Method,
+		URL:           r.URL,
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Header:        r.Header,
+		Body:          nopCloser{buf2},
 		Host:          r.Host,
 		ContentLength: r.ContentLength,
 	}
@@ -133,25 +143,25 @@ func (h *Handler) duplicateRequest(r *http.Request) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Println("Recovered in duplicateRequest", r)
+				log.Println("[WARN] Recovered in duplicateRequest", r)
 			}
 		}()
 
 		con, err := net.DialTimeout("tcp", h.endpoint, time.Duration(1*time.Second))
 		if err != nil {
-			log.Println("[_WARN] unable to connect to influxdb database")
+			log.Println("[WARN] unable to connect to influxdb database")
 			return
 		}
-
 		hcon := httputil.NewClientConn(con, nil)
 		defer hcon.Close()
 
 		err = hcon.Write(request)
 		if err != nil {
-			log.Println("[_WARN] unable to write to influxdb database")
+			log.Println("[WARN] unable to write to influxdb database")
 			return
 		}
-
 		hcon.Read(request)
 	}()
+
+	return drequest
 }

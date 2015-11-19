@@ -57,12 +57,12 @@ func (p *PipeLine) Destroy(dc *DockerCManager) {
 	// TODO: destroy nodes from top to bottom
 	for id, _ := range p.idToNode {
 		if id != "" {
-			dc.Stop(&Command{Code: CmdStopCont, KeyVal: map[string]string{"cont": id}})
+			dc.Stop(&Request{Code: ReqStopCont, KeyVal: map[string]string{"cont": id}})
 		}
 	}
 
 	for id, _ := range p.restNodes {
-		dc.Stop(&Command{Code: CmdStopCont, KeyVal: map[string]string{"cont": id}})
+		dc.Stop(&Request{Code: ReqStopCont, KeyVal: map[string]string{"cont": id}})
 	}
 }
 
@@ -106,8 +106,7 @@ func (p *PipeLine) AddNode(cur, parent string) error {
 	return nil
 }
 
-// we throw error if a child will become
-// orphan on deleting current node
+// we throw error if a child will become orphan on deleting current node
 func (p *PipeLine) DelNode(cur string) error {
 	_, ok := p.restNodes[cur]
 	if ok {
@@ -178,7 +177,6 @@ func (p *PipeLine) getNode(cur string) (*Node, error) {
 	if ok {
 		return me, nil
 	}
-
 	me, ok = p.idToNode[cur]
 	if ok {
 		return me, nil

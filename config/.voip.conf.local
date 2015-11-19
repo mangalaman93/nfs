@@ -1,0 +1,32 @@
+[DEFAULT]
+log_file=/home/ubuntu/nfs/nfs.log
+
+[CONTROLLER]
+host=0.0.0.0
+port=8087
+
+[VOIP]
+db=cadvisor
+unix_sock=/home/ubuntu/nfs/voip.sock
+
+; we collect data every 1000ms
+[VOIP.CONTROL]
+step_length=1000
+period_length=10000
+reference=20971520
+cpu_table=cpu_usage_total
+rx_table=rx_bytes
+tx_table=tx_bytes
+
+[VOIP.MANAGER]
+type=docker
+
+[VOIP.TOPO]
+local=0.0.0.0:2575
+
+; optional
+[VOIP.DB]
+user=voip
+password=voip
+host=0.0.0.0
+port=8086

@@ -7,7 +7,7 @@ import (
 )
 
 type TimeData struct {
-	data *queue.WordQueue
+	data *queue.IntQueue
 	ts   *queue.TimeQueue
 
 	// parameters
@@ -26,7 +26,7 @@ func NewTimeData(step int64, duration int64, bts time.Time) *TimeData {
 	length := int(duration / step * 2)
 
 	return &TimeData{
-		data: queue.NewWordQueue(length),
+		data: queue.NewIntQueue(length),
 		ts:   queue.NewTimeQueue(length),
 		bts:  bts,
 		step: step,

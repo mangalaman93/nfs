@@ -1,19 +1,19 @@
 package queue
 
-type WordQueue struct {
+type IntQueue struct {
 	vals []int64
 	head int
 	tail int
 	size int
 }
 
-func NewWordQueue(capacity int) *WordQueue {
-	return &WordQueue{
+func NewIntQueue(capacity int) *IntQueue {
+	return &IntQueue{
 		vals: make([]int64, capacity),
 	}
 }
 
-func (q *WordQueue) Push(val int64) {
+func (q *IntQueue) Push(val int64) {
 	if q.size == len(q.vals) {
 		q.resize()
 	}
@@ -23,7 +23,7 @@ func (q *WordQueue) Push(val int64) {
 	q.size++
 }
 
-func (q *WordQueue) Head() (int64, error) {
+func (q *IntQueue) Head() (int64, error) {
 	if q.size == 0 {
 		return 0, ErrEmptyQueue
 	}
@@ -31,7 +31,7 @@ func (q *WordQueue) Head() (int64, error) {
 	return q.vals[q.head], nil
 }
 
-func (q *WordQueue) Pop() (int64, error) {
+func (q *IntQueue) Pop() (int64, error) {
 	if q.size == 0 {
 		return 0, ErrEmptyQueue
 	}
@@ -43,12 +43,12 @@ func (q *WordQueue) Pop() (int64, error) {
 	return val, nil
 }
 
-func (q *WordQueue) Size() int {
+func (q *IntQueue) Size() int {
 	return q.size
 }
 
 // we only increase size (do not decrease)
-func (q *WordQueue) resize() {
+func (q *IntQueue) resize() {
 	newsize := q.size * 2
 
 	vals := make([]int64, newsize)

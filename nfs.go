@@ -75,7 +75,7 @@ func main() {
 	// register ctrl+c
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	log.Println("[_INFO] adding signal handler for SIGTERM")
+	log.Println("[INFO] adding signal handler for SIGTERM")
 
 	// read configuration file
 	config, err := goconfig.LoadConfigFile(cfile)
@@ -93,9 +93,9 @@ func main() {
 	}
 
 	// wait for ctrl+c
-	log.Println("[_INFO] waiting for ctrl+c signal")
+	log.Println("[INFO] waiting for ctrl+c signal")
 	<-sigs
 
 	// exit
-	log.Println("[_INFO] exiting main!")
+	log.Println("[INFO] exiting main!")
 }
