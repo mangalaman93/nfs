@@ -9,8 +9,9 @@ port=8086
 db=cadvisor
 unix_sock=/home/ubuntu/nfs/voip.sock
 
+; we collect data every 1000ms
 [VOIP.CONTROL]
-step_length=500
+step_length=1000
 period_length=10000
 reference=1048576
 cpu_table=cpu_usage_total

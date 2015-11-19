@@ -40,8 +40,8 @@ func (t *TimeData) AddPoint(ts time.Time, val int64) {
 }
 
 func (t *TimeData) Next() (int64, float64, bool) {
-	t.bts.Add(time.Millisecond * time.Duration(t.step))
-	t.since += t.step
+	flag := true
+	temp_bts := t.bts.Add(time.Millisecond * time.Duration(t.step))
 
 	for {
 		cval, err := t.data.Head()
@@ -51,20 +51,25 @@ func (t *TimeData) Next() (int64, float64, bool) {
 		}
 
 		// continue if we don't have latest timestamp
-		if cts.Before(t.bts) {
+		if cts.Before(temp_bts) {
 			t.pts, _ = t.ts.Pop()
 			t.pval, _ = t.data.Pop()
 			continue
 		}
 
+		if flag {
+			flag = false
+			t.bts = t.bts.Add(time.Millisecond * time.Duration(t.step))
+			t.since += t.step
+		}
+
 		// otherwise we have the latest timestamp
-		tdiff := cts.Sub(t.pts) * 10e9
+		tdiff := float64(cts.Sub(t.pts)) / 1e9
 		if t.pval == 0 || tdiff == 0 {
 			return cval, 0, true
 		} else {
-			return cval, float64(cval-t.pval) / float64(tdiff), true
+			return cval, float64(cval-t.pval) / tdiff, true
 		}
-
 	}
 }
 
@@ -73,7 +78,12 @@ func (t *TimeData) AfterD() int64 {
 		return 0
 	}
 
-	ret := t.since
+	cts, err := t.ts.Head()
+	if err != nil {
+		panic("NOT REACHABLE")
+	}
+
+	ret := t.since + int64(cts.Sub(t.bts))/1e6
 	t.since = 0
 	return ret
 }

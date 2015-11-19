@@ -80,18 +80,8 @@ func (m *MContainer) Trigger() int64 {
 		}
 
 		// we have three points rx, tx, cp synchronized within <step>
-		duration := m.inflow.AfterD()
 		ninetyp := float64(m.share) * 90 / 1024
 		switch {
-		// 1 interval is over, we look at only inflow for consistency
-		case duration > 0:
-			dprime := m.csum / m.share / duration
-			delta := (tx - m.ibytes) / duration
-			m.share -= (m.ref - delta) / dprime
-
-			// reinitialize
-			m.csum = 0
-			m.ibytes = tx
 		case m.ploadr > ninetyp && m.ploadr < ninetyp:
 			m.csum += (tx - m.tibytes) * int64(m.prxr/(m.prxr-m.ptxr))
 			m.tibytes = tx
@@ -99,7 +89,18 @@ func (m *MContainer) Trigger() int64 {
 			m.tibytes = tx
 		case m.ploadr > ninetyp && m.ploadr > ninetyp:
 		case m.ploadr < ninetyp && cpr < ninetyp:
-		default:
+		}
+
+		// 1 interval is over, we look at only inflow for consistency
+		duration := float64(m.inflow.AfterD())
+		if duration > 0 {
+			dprime := float64(m.csum) / float64(m.share) / duration
+			delta := float64(tx-m.ibytes) / duration
+			m.share -= int64((float64(m.ref) - delta) / dprime)
+
+			// reinitialize
+			m.csum = 0
+			m.ibytes = tx
 		}
 
 		m.ploadr = cpr
