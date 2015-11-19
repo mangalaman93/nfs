@@ -1,7 +1,8 @@
 ## Test locally
-* influxdb `docker run --rm -it -p 8083:8083 -p 8086:8086 -e PRE_CREATE_DB="cadvisor" tutum/influxdb`
-* grafana `docker run --rm -it -p 3000:3000 -v /home/ubuntu/grafana:/var/lib/grafana/ luzifer/grafana`
-& nfs `./nfs -c /home/ubuntu/nfs/.voip.conf`
+* influxdb `docker run --rm -it -p 8083:8083 -p 8086:8086 --name influxdb -e PRE_CREATE_DB="cadvisor" tutum/influxdb`
+* grafana `docker run --rm -it -p 3000:3000 --name grafana-server -v /home/ubuntu/grafana:/var/lib/grafana/ grafana/grafana`
+* cadvisor ui `http://localhost:8080/containers/system.slice`
+* nfs `./nfs -c /home/ubuntu/nfs/.voip.conf`
 * load `echo "cset rate 10" > /dev/udp/173.16.1.4/8888`
 
 ## Note

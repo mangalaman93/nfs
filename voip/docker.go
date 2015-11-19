@@ -97,7 +97,7 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 				"-storage_driver_user=" + iuser,
 				"-storage_driver_password=" + ipass,
 				"-storage_driver_host=" + chost + ":" + cport,
-				"storage_driver_buffer_duration=" + cadvisor_buffer_duration},
+				"-storage_driver_buffer_duration=" + cadvisor_buffer_duration},
 		}, "cadvisor-"+host)
 		if err != nil {
 			return nil, err
