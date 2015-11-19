@@ -13,7 +13,7 @@ var (
 )
 
 func Start(config *goconfig.ConfigFile) error {
-	port, err := config.GetValue("LINE_PROTOCOL", "port")
+	port, err := config.GetValue("CONTROLLER", "port")
 	if err != nil {
 		return err
 	}
@@ -23,14 +23,14 @@ func Start(config *goconfig.ConfigFile) error {
 		return err
 	}
 
+	apps = make(map[string]AppLine)
+	apps[vl.GetDB()] = vl
+	log.Println("[_INFO] registered db:", vl.GetDB(), "with VoipLine instance")
+
 	h, err := NewHandler(config, apps)
 	if err != nil {
 		return err
 	}
-
-	apps = make(map[string]AppLine)
-	apps[vl.GetDB()] = vl
-	log.Println("[_INFO] registered db:", vl.GetDB(), "with VoipLine instance")
 
 	go vl.Start()
 	go http.ListenAndServe(":"+port, h)

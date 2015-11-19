@@ -22,4 +22,8 @@ _testmain.go
 *.exe
 *.test
 *.prof
-.setup.md
+
+# project specific compiled files
+nfs
+examples/examples
+
