@@ -17,21 +17,21 @@ func main() {
 	}
 	defer vc.Close()
 
-	server, err := vc.AddServer()
+	server, err := vc.AddServer(1024)
 	if err != nil {
 		panic(err)
 	}
 	defer vc.Stop(server)
 	fmt.Println("started server:", server)
 
-	snort, err := vc.AddSnort()
+	snort, err := vc.AddSnort(256)
 	if err != nil {
 		panic(err)
 	}
 	defer vc.Stop(snort)
 	fmt.Println("started snort:", snort)
 
-	client, err := vc.AddClient(server)
+	client, err := vc.AddClient(server, 1024)
 	if err != nil {
 		panic(err)
 	}

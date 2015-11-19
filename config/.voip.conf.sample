@@ -7,7 +7,7 @@ port=8086
 
 [VOIP]
 db=cadvisor
-unix_sock=/home/ubuntu/nfs/nfs.sock
+unix_sock=/home/ubuntu/nfs/voip.sock
 
 [VOIP.CONTROL]
 step_length=500

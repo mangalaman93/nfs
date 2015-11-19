@@ -4,6 +4,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"net"
+	"strconv"
 
 	"github.com/Unknwon/goconfig"
 	"github.com/mangalaman93/nfs/voip"
@@ -33,33 +34,33 @@ func NewVoipClient(cfile string) (*VoipClient, error) {
 func (c *VoipClient) Close() {
 }
 
-func (c *VoipClient) AddServer() (string, error) {
+func (c *VoipClient) AddServer(shares int) (string, error) {
 	return c.runc(&voip.Command{
 		Code: voip.CmdStartServer,
 		KeyVal: map[string]string{
 			"host":   "local",
-			"shares": "1024",
+			"shares": strconv.Itoa(shares),
 		},
 	})
 }
 
-func (c *VoipClient) AddClient(server string) (string, error) {
+func (c *VoipClient) AddClient(server string, shares int) (string, error) {
 	return c.runc(&voip.Command{
 		Code: voip.CmdStartClient,
 		KeyVal: map[string]string{
 			"host":   "local",
-			"shares": "1024",
+			"shares": strconv.Itoa(shares),
 			"server": server,
 		},
 	})
 }
 
-func (c *VoipClient) AddSnort() (string, error) {
+func (c *VoipClient) AddSnort(shares int) (string, error) {
 	return c.runc(&voip.Command{
 		Code: voip.CmdStartSnort,
 		KeyVal: map[string]string{
 			"host":   "local",
-			"shares": "1024",
+			"shares": strconv.Itoa(shares),
 		},
 	})
 }

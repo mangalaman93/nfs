@@ -137,10 +137,21 @@ func (h *Handler) duplicateRequest(r *http.Request) {
 			}
 		}()
 
-		con, _ := net.DialTimeout("tcp", h.endpoint, time.Duration(1*time.Second))
+		con, err := net.DialTimeout("tcp", h.endpoint, time.Duration(1*time.Second))
+		if err != nil {
+			log.Println("[_WARN] unable to connect to influxdb database")
+			return
+		}
+
 		hcon := httputil.NewClientConn(con, nil)
-		hcon.Write(request)
+		defer hcon.Close()
+
+		err = hcon.Write(request)
+		if err != nil {
+			log.Println("[_WARN] unable to write to influxdb database")
+			return
+		}
+
 		hcon.Read(request)
-		hcon.Close()
 	}()
 }
