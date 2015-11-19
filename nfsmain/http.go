@@ -7,22 +7,48 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Unknwon/goconfig"
 	"github.com/influxdb/influxdb/models"
 )
 
-func ListenLine(port string, apps map[string]AppLine) {
-	http.HandleFunc("/", defaultHandler)
-	http.HandleFunc("/write", writeHandler)
-	http.ListenAndServe(":"+port, nil)
+type Handler struct {
+	apps     map[string]AppLine
+	dup      bool
+	endpoint string
 }
 
-func defaultHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("[_WARN] unexpected request:", r)
-	w.WriteHeader(http.StatusNoContent)
+func NewHandler(config *goconfig.ConfigFile, apps map[string]AppLine) (*Handler, error) {
+	var h *Handler
+
+	if s, _ := config.GetSection("VOIP.DB"); s == nil {
+		h = &Handler{
+			apps: apps,
+			dup:  false,
+		}
+	} else {
+		ihost, err := config.GetValue("VOIP.DB", "host")
+		if err != nil {
+			return nil, err
+		}
+
+		iport, err := config.GetValue("VOIP.DB", "port")
+		if err != nil {
+			return nil, err
+		}
+
+		h = &Handler{
+			apps:     apps,
+			dup:      true,
+			endpoint: ihost + ":" + iport,
+		}
+	}
+
+	return h, nil
 }
 
-func writeHandler(w http.ResponseWriter, r *http.Request) {
+func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Println("[_INFO] received data from", r.Host)
+	h.duplicateRequest(r)
 
 	precision := r.FormValue("precision")
 	if precision == "" {
@@ -43,7 +69,7 @@ func writeHandler(w http.ResponseWriter, r *http.Request) {
 	defer body.Close()
 
 	database := r.FormValue("db")
-	app, ok := apps[database]
+	app, ok := h.apps[database]
 	if !ok {
 		log.Println("[_WARN] unregistered database:", database)
 		w.WriteHeader(http.StatusNoContent)
@@ -75,4 +101,7 @@ func writeErr(w http.ResponseWriter, err error) {
 	w.WriteHeader(http.StatusBadRequest)
 	w.Write([]byte(err.Error()))
 	w.Write([]byte("\n"))
+}
+
+func (h *Handler) duplicateRequest(r *http.Request) {
 }

@@ -38,22 +38,29 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 		return nil, errors.New("error while finding host list")
 	}
 
-	iuser, err := config.GetValue("VOIP.DB", "user")
+	var iuser, ipass string
+	var err error
+	if s, _ := config.GetSection("VOIP.DB"); s == nil {
+		iuser = ""
+		ipass = ""
+	} else {
+		iuser, err = config.GetValue("VOIP.DB", "user")
+		if err != nil {
+			return nil, err
+		}
+
+		ipass, err = config.GetValue("VOIP.DB", "password")
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	chost, err := config.GetValue("CONTROLLER", "host")
 	if err != nil {
 		return nil, err
 	}
 
-	ipass, err := config.GetValue("VOIP.DB", "password")
-	if err != nil {
-		return nil, err
-	}
-
-	ihost, err := config.GetValue("VOIP.DB", "host")
-	if err != nil {
-		return nil, err
-	}
-
-	iport, err := config.GetValue("VOIP.DB", "port")
+	cport, err := config.GetValue("CONTROLLER", "port")
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +95,7 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 			Cmd: []string{"-storage_driver=influxdb",
 				"-storage_driver_user=" + iuser,
 				"-storage_driver_password=" + ipass,
-				"-storage_driver_host=" + ihost + ":" + iport},
+				"-storage_driver_host=" + chost + ":" + cport},
 		}, "cadvisor-"+host)
 		if err != nil {
 			return nil, err

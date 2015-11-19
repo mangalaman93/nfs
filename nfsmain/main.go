@@ -2,6 +2,7 @@ package nfsmain
 
 import (
 	"log"
+	"net/http"
 
 	"github.com/Unknwon/goconfig"
 	"github.com/mangalaman93/nfs/voip"
@@ -21,13 +22,18 @@ func Start(config *goconfig.ConfigFile) error {
 	if err != nil {
 		return err
 	}
-	vl.Start()
+
+	h, err := NewHandler(config, apps)
+	if err != nil {
+		return err
+	}
 
 	apps = make(map[string]AppLine)
 	apps[vl.GetDB()] = vl
 	log.Println("[_INFO] registered db:", vl.GetDB(), "with VoipLine instance")
 
-	go ListenLine(port, apps)
+	go vl.Start()
+	go http.ListenAndServe(":"+port, h)
 	log.Println("[_INFO] listening for data over line protocol on port", port)
 	return nil
 }

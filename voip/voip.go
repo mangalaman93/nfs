@@ -50,7 +50,7 @@ func NewVoipLine(config *goconfig.ConfigFile) (*VoipLine, error) {
 }
 
 func (v *VoipLine) Start() {
-	go v.accept()
+	v.accept()
 }
 
 func (v *VoipLine) Stop() {

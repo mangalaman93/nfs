@@ -1,7 +1,8 @@
 [DEFAULT]
 log_file=/home/ubuntu/nfs/nfs.log
 
-[LINE_PROTOCOL]
+[CONTROLLER]
+host=10.0.0.1
 port=8086
 
 [VOIP]
@@ -23,7 +24,7 @@ type=docker
 kepler=10.0.0.1:2575
 titan=10.0.0.2:2575
 
-; it may as well be a proxy
+; optional
 [VOIP.DB]
 user=voip
 password=voip
