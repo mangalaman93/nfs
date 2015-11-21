@@ -103,6 +103,8 @@ func (c *NFCont) Tail(influxchan chan *influxdb.Point) {
 			log.Printf("[WARN] %s file not found!\n", netfilter_file)
 			continue
 		}
+
+		break
 	}
 
 	for {
