@@ -68,7 +68,7 @@ call_rates = []
 timestamps = []
 sum = 0
 count = 0
-query = "SELECT * FROM call_rate WHERE time > #{from}s AND time < #{to}s AND container_name = '#{cont}'"
+query = "SELECT * FROM call_rate WHERE time > #{from}s AND time < #{to}s AND container_name =~ /#{cont}/"
 influxdb.query query, epoch: 'ms' do |name, tags, points|
   points.each { |point|
     rate = point["value"].to_i
@@ -110,7 +110,7 @@ timestamps.each_with_index { |t, i|
   metrics.each_with_index { |m, j|
     sum = 0
     count = 0
-    query = "SELECT #{select_str[j]} FROM #{m} WHERE time > '#{t}' AND time < '#{timestamps[i+1]}' AND container_name = '#{cont}' GROUP BY time(1s)"
+    query = "SELECT #{select_str[j]} FROM #{m} WHERE time > '#{t}' AND time < '#{timestamps[i+1]}' AND container_name =~ /#{cont}/ GROUP BY time(1s)"
     data = influxdb.query query do |name, tags, points|
       points.each { |point|
         sum += point[value_str[j]].to_f
