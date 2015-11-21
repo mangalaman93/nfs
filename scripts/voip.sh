@@ -44,8 +44,8 @@ stop_exp() {
   docker kill $HOST-cadvisor &>/dev/null
   docker rm $HOST-cadvisor &>/dev/null
 
-  echo "stop monsipp"
-  sudo kill $(pidof monsipp) &>/dev/null
+  echo "stop moncont"
+  sudo kill $(pidof moncont) &>/dev/null
 
   echo "delete containers"
   for (( i = 0; i < $NUM_SNORT; i++ )); do
@@ -115,9 +115,9 @@ start_exp_on_cur() {
     exit 1
   fi
 
-  pidof monsipp &>/dev/null
+  pidof moncont &>/dev/null
   if [[ $? -eq 0 ]]; then
-    echo "Error: monsipp is already running!"
+    echo "Error: moncont is already running!"
     exit 1
   fi
 
@@ -130,10 +130,10 @@ start_exp_on_cur() {
     err_if_running "snort$i"
   done
 
-  # run monsipp
-  cd ~/nfs/ && sudo ./monsipp -d $INFLUXDB_IP:$INFLUXDB_PORT:$INFLUXDB_USER:$INFLUXDB_PASS
+  # run moncont
+  cd ~/nfs/ && sudo ./moncont -d $INFLUXDB_IP:$INFLUXDB_PORT:$INFLUXDB_USER:$INFLUXDB_PASS
 
-  # wait for monsipp to start on other server
+  # wait for moncont to start on other server
   echo -n "run the same script on $OTH_HOST and press enter"
   read text
 
@@ -183,9 +183,9 @@ start_exp_on_cur() {
     exit 1
   fi
 
-  pidof monsipp &>/dev/null
+  pidof moncont &>/dev/null
   if [[ $? -ne 0 ]]; then
-    echo "Error: monsipp did not run!"
+    echo "Error: moncont did not run!"
     stop_exp
     exit 1
   fi
@@ -211,14 +211,14 @@ start_exp_on_oth() {
     exit 1
   fi
 
-  pidof monsipp &>/dev/null
+  pidof moncont &>/dev/null
   if [[ $? -eq 0 ]]; then
-    echo "Error: monsipp is not running!"
+    echo "Error: moncont is not running!"
     exit 1
   fi
 
-  # run monsipp
-  cd ~/nfs/ && sudo ./monsipp -d $INFLUXDB_IP:$INFLUXDB_PORT:$INFLUXDB_USER:$INFLUXDB_PASS
+  # run moncont
+  cd ~/nfs/ && sudo ./moncont -d $INFLUXDB_IP:$INFLUXDB_PORT:$INFLUXDB_USER:$INFLUXDB_PASS
 
   # wait for containers to start
   echo -n "press enter when script is done running on $CUR_HOST"
@@ -246,9 +246,9 @@ start_exp_on_oth() {
     exit 1
   fi
 
-  pidof monsipp &>/dev/null
+  pidof moncont &>/dev/null
   if [[ $? -ne 0 ]]; then
-    echo "Error: monsipp did not run!"
+    echo "Error: moncont did not run!"
     stop_exp
     exit 1
   fi

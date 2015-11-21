@@ -1,3 +1,7 @@
+/* plots real time graph of cpu usage of
+   a container using feedgnuplot
+*/
+
 package main
 
 import (
@@ -13,8 +17,8 @@ import (
 )
 
 import (
-	"github.com/mangalaman93/nfs/docker"
-	"github.com/mangalaman93/nfs/linux"
+	"github.com/mangalaman93/collectdocker/docker"
+	"github.com/mangalaman93/collectdocker/linux"
 )
 
 func main() {
