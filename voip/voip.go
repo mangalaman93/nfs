@@ -94,11 +94,11 @@ func (v *VoipLine) accept() {
 		}
 
 		log.Println("[INFO] Received request from", conn.RemoteAddr())
-		v.handleRequest(conn)
+		v.handleConn(conn)
 	}
 }
 
-func (v *VoipLine) handleRequest(conn *net.UnixConn) {
+func (v *VoipLine) handleConn(conn *net.UnixConn) {
 	defer conn.Close()
 	enc := gob.NewEncoder(conn)
 	dec := gob.NewDecoder(conn)

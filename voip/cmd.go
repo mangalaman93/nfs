@@ -61,7 +61,7 @@ func (s *State) handleRequest(req *Request) *Response {
 		}
 		return resp
 	case ReqStopCont:
-		// TODO: we send request for all containers even when it may not be monitored
+		// TODO: we send request for all containers even while it may not be monitored
 		kv := req.KeyVal
 		_, ok := kv["cont"]
 		if !ok {
