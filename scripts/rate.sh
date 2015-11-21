@@ -1,5 +1,8 @@
 #!/bin/bash
 
+## sets the desired call rate for range of sipp containers
+#
+
 # checking command line arguments
 if [ "$#" -lt 4 ]; then
   echo "error!"

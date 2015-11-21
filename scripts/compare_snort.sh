@@ -1,5 +1,12 @@
 #!/bin/bash
 
+## This script downloads influxdb data using idb.rb script.
+## It creates two files containing data for the two cases
+## depending upon whether snort was running. It needs to be
+## provided with container id and points of time when the
+## experiments were performed
+#
+
 if [ "$#" -lt 6 ]; then
   echo "error!"
   echo "Usage: $0 [with snort]<container> <from> <to> [without]<container> <from> <to>" >&2

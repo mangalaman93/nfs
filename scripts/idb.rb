@@ -1,5 +1,9 @@
 #!/usr/bin/env ruby
 
+## This scripts downloads data from influxdb with
+## provided specifications (obvious)
+#
+
 require "flags"
 require "json"
 require 'tempfile'

@@ -1,5 +1,10 @@
 #!/bin/bash
 
+## This scripts performs a double ssh and downloads .table
+## and .logs files corresponding to the experiment from the
+## folder /opt/nfs/stack from both the physical servers
+#
+
 if [ "$#" -lt 1 ]; then
   echo "error!"
   echo "Usage: $0 <folder>" >&2

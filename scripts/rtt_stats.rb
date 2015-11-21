@@ -1,5 +1,8 @@
 #!/usr/bin/ruby
 
+## aggregates rtt data of sipp instances
+#
+
 require 'csv'
 
 unless ARGV.length == 1

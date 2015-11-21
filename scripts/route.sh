@@ -1,5 +1,9 @@
 #!/bin/bash
 
+## sets up routes sipp-client -> snort -> server
+## the reverse route is intact i.e. server -> sipp-client
+#
+
 # constants
 OVS_BRIDGE=br-int
 

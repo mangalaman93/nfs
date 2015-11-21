@@ -1,5 +1,8 @@
 #!/bin/bash
 
+## giant script to create voip topology
+#
+
 if [ "$#" -lt 1 ]; then
   echo "error!"
   echo "Usage: $0 start|stop" >&2
@@ -46,7 +49,7 @@ stop_exp() {
 
   echo "delete containers"
   for (( i = 0; i < $NUM_SNORT; i++ )); do
-    nova delete "suricata$i" &>/dev/null
+    nova delete "snort$i" &>/dev/null
   done
   for (( i = 0; i < $NUM_SIPP; i++ )); do
     nova delete "sipp-client$i" "sipp-server$i" &>/dev/null
@@ -88,14 +91,14 @@ err_if_not_running() {
   fi
 }
 
-# $1 -> suricata instance index
+# $1 -> snort instance index
 set_switch_routes() {
   if [[ "$IS_SNORT" != "true" ]]; then
     return
   fi
 
   for (( i = 0; i < $NUM_SIPP; i++ )); do
-    ./${ROUTE_SH} "sipp-client$i" "suricata$1" "sipp-server$i"
+    ./${ROUTE_SH} "sipp-client$i" "snort$1" "sipp-server$i"
     if [[ $? -ne 0 ]]; then
       echo "Error setting up routes"
       stop_exp
@@ -124,7 +127,7 @@ start_exp_on_cur() {
   done
 
   for (( i = 0; i < $NUM_SNORT; i++ )); do
-    err_if_running "suricata$i"
+    err_if_running "snort$i"
   done
 
   # run monsipp
@@ -145,14 +148,14 @@ start_exp_on_cur() {
     echo "server$i: ${SERVER_IP[$i]}"
   done
 
-  # run suricata
+  # run snort
   if [[ "$IS_SNORT" == "true" ]]; then
     for (( i = 0; i < $NUM_SNORT; i++ )); do
-      echo "running suricata$i"
-      nova boot --image mangalaman93/suricata --meta OPT_CAP_ADD=NET_ADMIN --availability-zone regionOne:$HOST_SNORT --flavor c1.small "suricata$i" > /dev/null
+      echo "running snort$i"
+      nova boot --image mangalaman93/snort --meta OPT_CAP_ADD=NET_ADMIN --availability-zone regionOne:$HOST_SNORT --flavor c1.small "snort$i" > /dev/null
       sleep 3
-      check_host "suricata$i" $HOST_SNORT
-      find_ip "suricata$i"
+      check_host "snort$i" $HOST_SNORT
+      find_ip "snort$i"
       ROUTER_IP=$OUT_IP
       echo "router$i: $ROUTER_IP"
     done
@@ -194,7 +197,7 @@ start_exp_on_cur() {
 
   if [[ "$IS_SNORT" == "true" ]]; then
     for (( i = 0; i < $NUM_SNORT; i++ )); do
-      err_if_not_running "suricata$i"
+      err_if_not_running "snort$i"
     done
   fi
 
@@ -228,7 +231,7 @@ start_exp_on_oth() {
 
   if [[ "$IS_SNORT" == "true" ]]; then
     for (( i = 0; i < $NUM_SNORT; i++ )); do
-      err_if_not_running "suricata$i"
+      err_if_not_running "snort$i"
     done
   fi
 
@@ -260,7 +263,7 @@ case $1 in
     if [ "$#" -gt 1 ]; then
       if [ "$#" -lt 6 ]; then
         echo "error!"
-        echo "Usage: $0 start host_[client server suricata(false)] [num_sipp] [num_suricata]" >&2
+        echo "Usage: $0 start host_[client server snort(false)] [num_sipp] [num_snort]" >&2
         exit 1
       else
         HOST_SIPP_CLIENT=$2
@@ -294,7 +297,7 @@ case $1 in
     if [ "$#" -gt 1 ]; then
       if [ "$#" -gt 3 ]; then
         echo "error!"
-        echo "Usage: $0 stop [num_sipp] [num_suricata]" >&2
+        echo "Usage: $0 stop [num_sipp] [num_snort]" >&2
         exit 1
       else
         NUM_SIPP=$2

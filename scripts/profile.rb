@@ -1,5 +1,8 @@
 #!/usr/bin/ruby
 
+## generates profile of a container for an experiment
+#
+
 require "flags"
 require 'influxdb'
 

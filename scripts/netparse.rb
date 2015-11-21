@@ -1,3 +1,8 @@
+#!/usr/bin/env ruby
+
+## Parses the output of `dstat -nf` and creates a spreadsheet
+#
+
 require 'spreadsheet'
 
 unless ARGV.length == 2
