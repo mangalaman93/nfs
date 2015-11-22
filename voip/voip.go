@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"sync"
 
 	"github.com/Unknwon/goconfig"
 	"github.com/influxdb/influxdb/models"
@@ -16,22 +17,11 @@ type VoipLine struct {
 	sockfile string
 	sock     *net.UnixListener
 	state    *State
-	quit     chan bool
+	quit     chan interface{}
+	wg       sync.WaitGroup
 }
 
 func NewVoipLine(config *goconfig.ConfigFile) (*VoipLine, error) {
-	undo := true
-
-	state, err := NewState(config)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if undo {
-			state.Destroy()
-		}
-	}()
-
 	sockfile, err := config.GetValue("VOIP", "unix_sock")
 	if err != nil {
 		return nil, err
@@ -45,25 +35,31 @@ func NewVoipLine(config *goconfig.ConfigFile) (*VoipLine, error) {
 		return nil, err
 	}
 
-	undo = false
+	state, err := NewState(config)
+	if err != nil {
+		sock.Close()
+		return nil, err
+	}
+
 	return &VoipLine{
 		database: db,
 		sockfile: sockfile,
 		sock:     sock,
 		state:    state,
-		quit:     make(chan bool, 1),
+		quit:     make(chan interface{}),
 	}, nil
 }
 
 func (v *VoipLine) Start() {
+	v.state.Init()
 	v.accept()
 }
 
 func (v *VoipLine) Stop() {
-	v.quit <- true
+	close(v.quit)
 	v.sock.Close()
 	v.state.Destroy()
-	<-v.quit
+	v.wg.Wait()
 
 	os.Remove(v.sockfile)
 	log.Println("[INFO] exiting voip loop")
@@ -78,6 +74,8 @@ func (v *VoipLine) Update(points models.Points) {
 }
 
 func (v *VoipLine) accept() {
+	v.wg.Add(1)
+	defer v.wg.Done()
 	log.Println("[INFO] listening voip commands on", v.sockfile)
 
 	for {
@@ -85,7 +83,6 @@ func (v *VoipLine) accept() {
 		if err != nil {
 			select {
 			case <-v.quit:
-				close(v.quit)
 				return
 			default:
 				log.Println("[WARN] error accepting:", err)

@@ -2,6 +2,7 @@ package voip
 
 import (
 	"strconv"
+	"sync"
 
 	"github.com/Unknwon/goconfig"
 	"github.com/influxdb/influxdb/models"
@@ -12,6 +13,8 @@ const (
 )
 
 type State struct {
+	sync.Mutex
+
 	// control parameters
 	nfconts map[string]*MContainer
 	rchan   chan *Request
@@ -82,35 +85,43 @@ func NewState(config *goconfig.ConfigFile) (*State, error) {
 	}, nil
 }
 
+func (s *State) Init() {
+	go s.ListenMod()
+}
+
 func (s *State) Destroy() {
 	close(s.rchan)
 	s.mger.Destroy()
 }
 
-func (s *State) Trigger() {
-	for _, cont := range s.nfconts {
-		shares := cont.Trigger()
-		s.mger.SetShares(cont.id, shares)
+func (s *State) ListenMod() {
+	for nf := range s.rchan {
+		s.AddCont(nf)
+	}
+}
+
+func (s *State) AddCont(nf *Request) {
+	s.Lock()
+	defer s.Unlock()
+
+	if nf.Code == reqNewMContainer {
+		id := nf.KeyVal["id"]
+		ishares, _ := strconv.ParseInt(nf.KeyVal["shares"], 10, 64)
+		s.nfconts[id] = NewMContainer(id, s.step_length, s.period_length, ishares, s.reference)
+	} else if nf.Code == reqDelMContainer {
+		delete(s.nfconts, nf.KeyVal["id"])
 	}
 }
 
 func (s *State) Update(points models.Points) {
-	select {
-	case nf := <-s.rchan:
-		if nf.Code == reqNewMContainer {
-			id := nf.KeyVal["id"]
-			ishares, _ := strconv.ParseInt(nf.KeyVal["shares"], 10, 64)
-			s.nfconts[id] = NewMContainer(id, s.step_length, s.period_length, ishares, s.reference)
-		} else if nf.Code == reqDelMContainer {
-			delete(s.nfconts, nf.KeyVal["id"])
-		}
-	default:
-	}
+	s.Lock()
+	defer s.Unlock()
 
 	if len(s.nfconts) == 0 {
 		return
 	}
 
+	// update points
 	for _, point := range points {
 		cont, ok := s.nfconts[point.Tags()["container_name"]]
 		if !ok {
@@ -128,5 +139,9 @@ func (s *State) Update(points models.Points) {
 		}
 	}
 
-	s.Trigger()
+	// run the algorithm
+	for _, cont := range s.nfconts {
+		shares := cont.Trigger()
+		s.mger.SetShares(cont.id, shares)
+	}
 }
