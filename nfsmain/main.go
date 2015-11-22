@@ -18,15 +18,14 @@ func Start(config *goconfig.ConfigFile) error {
 	if err != nil {
 		return err
 	}
-
 	vl, err := voip.NewVoipLine(config)
 	if err != nil {
 		return err
 	}
+
 	apps = make(map[string]AppLine)
 	apps[vl.GetDB()] = vl
 	log.Println("[INFO] registered db:", vl.GetDB(), "with VoipLine instance")
-
 	server, err = NewStoppableServer(config, apps)
 	if err != nil {
 		return err
@@ -39,13 +38,17 @@ func Start(config *goconfig.ConfigFile) error {
 	tl, _ := l.(*net.TCPListener)
 	log.Println("[INFO] listening for data on", l.Addr())
 
-	go server.Start(tl)
-	go vl.Start()
+	server.Start(tl)
+	vl.Start()
 	return nil
 }
 
 func Stop() {
+	// stop the server first so that app methods
+	// are not called after calling Stop()
 	server.Stop()
+
+	// and not stop apps
 	for _, app := range apps {
 		app.Stop()
 	}

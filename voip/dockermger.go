@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"strconv"
 
 	"github.com/Unknwon/goconfig"
 	docker "github.com/mangalaman93/dockerclient"
@@ -23,12 +22,10 @@ const (
 
 var (
 	ErrHostNotFound = errors.New("Host not found")
-	ErrNoMacAddress = errors.New("Unable to generate mac address")
 )
 
 type DockerCManager struct {
-	dokclients map[string]*docker.DockerClient
-	pipe       *PipeLine
+	dockercls map[string]*docker.DockerClient
 }
 
 func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
@@ -41,10 +38,7 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 
 	var iuser, ipass string
 	var err error
-	if s, _ := config.GetSection("VOIP.DB"); s == nil {
-		iuser = ""
-		ipass = ""
-	} else {
+	if s, _ := config.GetSection("VOIP.DB"); s != nil {
 		iuser, err = config.GetValue("VOIP.DB", "user")
 		if err != nil {
 			return nil, err
@@ -75,7 +69,7 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 		}
 	}()
 
-	dokclients := make(map[string]*docker.DockerClient)
+	dockercls := make(map[string]*docker.DockerClient)
 	for _, host := range hosts {
 		address, err := config.GetValue("VOIP.TOPO", host)
 		if err != nil {
@@ -85,7 +79,7 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 		if err != nil {
 			return nil, err
 		}
-		dokclients[host] = client
+		dockercls[host] = client
 		log.Println("[INFO] added host", host)
 
 		id, err := client.CreateContainer(&docker.ContainerConfig{
@@ -122,16 +116,12 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 
 	undo = false
 	return &DockerCManager{
-		dokclients: dokclients,
-		pipe:       NewPipeLine(),
+		dockercls: dockercls,
 	}, nil
 }
 
 func (d *DockerCManager) Destroy() {
-	d.pipe.Destroy(d)
-	ovsDestroy()
-
-	for host, client := range d.dokclients {
+	for host, client := range d.dockercls {
 		contid := "cadvisor-" + host
 		if err := client.StopContainer(contid, CONT_STOP_TIMEOUT); err != nil {
 			log.Println("[WARN] unable to stop container", contid)
@@ -142,20 +132,11 @@ func (d *DockerCManager) Destroy() {
 
 		log.Println("[INFO] stopped cadvisor on host", host)
 	}
+
+	ovsDestroy()
 }
 
-func (d *DockerCManager) AddServer(req *Request) *Response {
-	kv := req.KeyVal
-	host, ok1 := kv["host"]
-	sshares, ok2 := kv["shares"]
-	if !ok1 || !ok2 {
-		return &Response{Err: ErrKeyNotFound.Error()}
-	}
-	shares, err := strconv.ParseInt(sshares, 10, 64)
-	if err != nil {
-		return &Response{Err: err.Error()}
-	}
-
+func (d *DockerCManager) StartServer(host string, shares int64) (*Node, error) {
 	return d.runc(host, "sipp-server", &docker.ContainerConfig{
 		Env:             []string{"ARGS=-buff_size " + SIPP_BUFF_SIZE + " -sn uas"},
 		Image:           IMG_SIPP,
@@ -166,23 +147,18 @@ func (d *DockerCManager) AddServer(req *Request) *Response {
 	})
 }
 
-func (d *DockerCManager) AddClient(req *Request) *Response {
-	kv := req.KeyVal
-	host, ok1 := kv["host"]
-	sshares, ok2 := kv["shares"]
-	serverid, ok3 := kv["server"]
-	if !ok1 || !ok2 || !ok3 {
-		return &Response{Err: ErrKeyNotFound.Error()}
-	}
-	shares, err := strconv.ParseInt(sshares, 10, 64)
-	if err != nil {
-		return &Response{Err: err.Error()}
-	}
-	serverip, err := d.pipe.GetIPAddress(serverid)
-	if err != nil {
-		return &Response{Err: err.Error()}
-	}
+func (d *DockerCManager) StartSnort(host string, shares int64) (*Node, error) {
+	return d.runc(host, "snort", &docker.ContainerConfig{
+		Image:           IMG_SNORT,
+		NetworkDisabled: true,
+	}, &docker.HostConfig{
+		CapAdd:    []string{"NET_ADMIN"},
+		CpuShares: shares,
+		CpuQuota:  int64(shares * DEFAULT_CPU_PERIOD / 1024),
+	})
+}
 
+func (d *DockerCManager) StartClient(host string, shares int64, serverip string) (*Node, error) {
 	args := "-buff_size " + SIPP_BUFF_SIZE + " -sn uac -r 0 " + serverip + ":5060"
 	return d.runc(host, "sipp-client", &docker.ContainerConfig{
 		Env:             []string{"ARGS=" + args},
@@ -194,40 +170,68 @@ func (d *DockerCManager) AddClient(req *Request) *Response {
 	})
 }
 
-func (d *DockerCManager) AddSnort(req *Request) (*Response, string) {
-	kv := req.KeyVal
-	host, ok1 := kv["host"]
-	sshares, ok2 := kv["shares"]
-	if !ok1 || !ok2 {
-		return &Response{Err: ErrKeyNotFound.Error()}, ""
-	}
-	shares, err := strconv.ParseInt(sshares, 10, 64)
-	if err != nil {
-		return &Response{Err: err.Error()}, ""
+func (d *DockerCManager) StopCont(node *Node) error {
+	client, ok := d.dockercls[node.host]
+	if !ok {
+		log.Println("[WARN] client doesn't exist for host", node.host)
+		return ErrHostNotFound
 	}
 
-	return d.runc(host, "snort", &docker.ContainerConfig{
-		Image:           IMG_SNORT,
-		NetworkDisabled: true,
-	}, &docker.HostConfig{
-		CapAdd:    []string{"NET_ADMIN"},
-		CpuShares: shares,
-		CpuQuota:  int64(shares * DEFAULT_CPU_PERIOD / 1024),
-	}), sshares
+	ovsDeRoute(node.mac)
+	log.Println("[INFO] derouted for container", node.id)
+
+	err := client.StopContainer(node.id, CONT_STOP_TIMEOUT)
+	if err != nil {
+		log.Println("[WARN] unable to stop container", node.id)
+	} else {
+		log.Println("[INFO] container with id", node.id, "stopped")
+		ovsUSetupNetwork(node.id)
+		err = client.RemoveContainer(node.id, true, true)
+	}
+
+	return err
 }
 
-func (d *DockerCManager) runc(host, prefix string, cconf *docker.ContainerConfig, hconf *docker.HostConfig) *Response {
-	undo := true
+func (d *DockerCManager) Route(cnode, rnode, snode *Node) error {
+	err := ovsRoute(cnode.mac, rnode.mac, snode.mac)
+	if err != nil {
+		return err
+	}
 
-	client, ok := d.dokclients[host]
+	log.Println("[INFO] setup route", cnode.mac, "->", rnode.mac, "->", snode.mac)
+	return nil
+}
+
+func (d *DockerCManager) SetShares(node *Node, shares int64) error {
+	client, ok := d.dockercls[node.host]
 	if !ok {
-		return &Response{Err: ErrHostNotFound.Error()}
+		log.Println("[WARN] docker client for host", node.host, "not found")
+		return ErrHostNotFound
+	}
+
+	if err := client.SetContainer(node.id, &docker.HostConfig{
+		CpuShares: shares,
+		CpuQuota:  int64(shares * DEFAULT_CPU_PERIOD / 1024),
+	}); err != nil {
+		log.Println("[WARN] unable to set new shares")
+		return err
+	}
+
+	log.Println("[INFO] set cpu limit for container", node.id, "to", shares)
+	return nil
+}
+
+func (d *DockerCManager) runc(host, prefix string, cconf *docker.ContainerConfig, hconf *docker.HostConfig) (*Node, error) {
+	undo := true
+	client, ok := d.dockercls[host]
+	if !ok {
+		return nil, ErrHostNotFound
 	}
 
 	cid := fmt.Sprintf("%s-%s", prefix, uuid.NewV1())
 	_, err := client.CreateContainer(cconf, cid)
 	if err != nil {
-		return &Response{Err: err.Error()}
+		return nil, err
 	}
 	defer func() {
 		if undo {
@@ -238,7 +242,7 @@ func (d *DockerCManager) runc(host, prefix string, cconf *docker.ContainerConfig
 
 	err = client.StartContainer(cid, hconf)
 	if err != nil {
-		return &Response{Err: err.Error()}
+		return nil, err
 	}
 	log.Println("[INFO] container with id", cid)
 	defer func() {
@@ -249,7 +253,7 @@ func (d *DockerCManager) runc(host, prefix string, cconf *docker.ContainerConfig
 
 	ip, mac, err := ovsSetupNetwork(cid)
 	if err != nil {
-		return &Response{Err: err.Error()}
+		return nil, err
 	}
 	log.Println("[INFO] setup network for container", cid, "ip:", ip, "mac:", mac)
 	defer func() {
@@ -258,124 +262,6 @@ func (d *DockerCManager) runc(host, prefix string, cconf *docker.ContainerConfig
 		}
 	}()
 
-	err = d.pipe.NewNode(cid, ip, mac, host)
-	if err != nil {
-		return &Response{Err: err.Error()}
-	}
-	defer func() {
-		if undo {
-			d.pipe.DelNode(cid)
-		}
-	}()
-
 	undo = false
-	return &Response{Result: cid}
-}
-
-func (d *DockerCManager) Stop(req *Request) *Response {
-	kv := req.KeyVal
-	cont, ok := kv["cont"]
-	if !ok {
-		return &Response{Err: ErrKeyNotFound.Error()}
-	}
-	host, err := d.pipe.GetHost(cont)
-	if err != nil {
-		return &Response{Err: err.Error()}
-	}
-	client, ok := d.dokclients[host]
-	if !ok {
-		panic(!ok)
-	}
-
-	err = client.StopContainer(cont, CONT_STOP_TIMEOUT)
-	if err != nil {
-		log.Println("[WARN] unable to stop container", cont)
-	} else {
-		log.Println("[INFO] container with id", cont, "stopped")
-		ovsUSetupNetwork(cont)
-		client.RemoveContainer(cont, true, true)
-	}
-
-	cmac, err := d.pipe.GetMacAddress(cont)
-	if err != nil {
-		log.Println("[WARN] unable to get mac from pipe", cont)
-		log.Println("[WARN] pipe may be inconsistent")
-	} else {
-		ovsDeRoute(cmac)
-		log.Println("[INFO] derouted for container", cont)
-	}
-
-	err = d.pipe.DelNode(cont)
-	if err != nil {
-		log.Println("[WARN] unable to delete node from pipe", cont, "err:", err)
-		log.Println("[WARN] pipe may be inconsistent")
-	}
-
-	return &Response{}
-}
-
-func (d *DockerCManager) Route(req *Request) *Response {
-	// get all the required keys from KeyVal first
-	kv := req.KeyVal
-	client, ok1 := kv["client"]
-	server, ok2 := kv["server"]
-	router, ok3 := kv["router"]
-	if !ok1 || !ok2 || !ok3 {
-		return &Response{Err: ErrKeyNotFound.Error()}
-	}
-
-	cmac, err := d.pipe.GetMacAddress(client)
-	if err != nil {
-		return &Response{Err: err.Error()}
-	}
-	smac, err := d.pipe.GetMacAddress(server)
-	if err != nil {
-		return &Response{Err: err.Error()}
-	}
-	rmac, err := d.pipe.GetMacAddress(router)
-	if err != nil {
-		return &Response{Err: err.Error()}
-	}
-
-	err = ovsRoute(cmac, rmac, smac)
-	if err != nil {
-		return &Response{Err: err.Error()}
-	}
-
-	err = d.pipe.AddNode(server, RootNode.id)
-	if err != nil {
-		panic(err)
-	}
-	err = d.pipe.AddNode(router, server)
-	if err != nil {
-		panic(err)
-	}
-	err = d.pipe.AddNode(client, router)
-	if err != nil {
-		panic(err)
-	}
-
-	log.Println("[INFO] setup route", cmac, "->", rmac, "->", smac)
-	return &Response{}
-}
-
-func (d *DockerCManager) SetShares(id string, shares int64) {
-	host, err := d.pipe.GetHost(id)
-	if err != nil {
-		log.Println("[WARN] unable to set shares for container", id, "err:", err)
-		return
-	}
-	client, ok := d.dokclients[host]
-	if !ok {
-		panic(!ok)
-	}
-
-	if err := client.SetContainer(id, &docker.HostConfig{
-		CpuShares: shares,
-		CpuQuota:  int64(shares * DEFAULT_CPU_PERIOD / 1024),
-	}); err != nil {
-		log.Println("[WARN] unable to set new shares")
-	}
-
-	log.Println("[INFO] set cpu limit for container", id, "to", shares)
+	return NewNode(cid, ip, mac, host), nil
 }

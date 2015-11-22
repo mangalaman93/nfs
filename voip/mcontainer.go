@@ -2,6 +2,7 @@ package voip
 
 import (
 	"log"
+	"math"
 	"time"
 
 	"github.com/influxdb/influxdb/models"
@@ -14,10 +15,16 @@ const (
 )
 
 type MContainer struct {
-	id      string
+	*Node
+
+	// data
 	inflow  *TimeData
 	outflow *TimeData
 	cpuload *TimeData
+
+	// control vars
+	shares int64
+	ref    int64
 
 	// algorithm vars
 	ploadr  float64
@@ -26,17 +33,13 @@ type MContainer struct {
 	ibytes  int64
 	tibytes int64
 	csum    int64
-
-	// control vars
-	shares int64
-	ref    int64
 }
 
-func NewMContainer(id string, step, wl, shares, ref int64) *MContainer {
+func NewMContainer(node *Node, step, wl, shares, ref int64) *MContainer {
 	curtime := time.Now()
 
 	return &MContainer{
-		id:      id,
+		Node:    node,
 		inflow:  NewTimeData(step, wl, curtime),
 		outflow: NewTimeData(step, wl, curtime),
 		cpuload: NewTimeData(step, wl, curtime),
@@ -69,7 +72,8 @@ func (m *MContainer) Trigger() int64 {
 	for {
 		_, rxr, ok1 := m.inflow.Next()
 		tx, txr, ok2 := m.outflow.Next()
-		_, cpr, ok3 := m.inflow.Next()
+		_, cpr, ok3 := m.cpuload.Next()
+		cpr /= 10000000
 		if !ok1 || !ok2 || !ok3 {
 			break
 		}
@@ -81,9 +85,10 @@ func (m *MContainer) Trigger() int64 {
 
 		// we have three points rx, tx, cp synchronized within <step>
 		ninetyp := float64(m.shares) * 90 / 1024
+
 		switch {
 		case m.ploadr > ninetyp && m.ploadr < ninetyp:
-			m.csum += (tx - m.tibytes) * int64(m.prxr/(m.prxr-m.ptxr))
+			m.csum += (tx - m.tibytes) * int64(m.prxr/(m.prxr+m.ptxr))
 			m.tibytes = tx
 		case m.ploadr < ninetyp && m.ploadr > ninetyp:
 			m.tibytes = tx
@@ -95,9 +100,11 @@ func (m *MContainer) Trigger() int64 {
 		duration := float64(m.inflow.AfterD())
 		if duration > 0 {
 			dprime := float64(m.csum) / float64(m.shares) / duration
-			delta := float64(tx-m.ibytes) / duration
+			if math.Abs(dprime) > 0.01 {
+				delta := float64(tx-m.ibytes) / duration
+				m.shares -= int64((float64(m.ref) - delta) / dprime)
+			}
 
-			m.shares -= int64((float64(m.ref) - delta) / dprime)
 			m.csum = 0
 			m.ibytes = tx
 		}

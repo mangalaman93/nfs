@@ -1,6 +1,7 @@
 package voip
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log"
@@ -48,7 +49,7 @@ func ovsInit() error {
 	}
 
 	undo := true
-	out, err = runsh("sudo ovs-vsctl add-br " + OVS_BRIDGE)
+	_, err = runsh("sudo ovs-vsctl add-br " + OVS_BRIDGE)
 	if err != nil {
 		return err
 	}
@@ -57,8 +58,7 @@ func ovsInit() error {
 			ovsDestroy()
 		}
 	}()
-
-	out, err = runsh("sudo ifconfig " + OVS_BRIDGE + " " + INET + " netmask " + NETMASK + " up")
+	_, err = runsh("sudo ifconfig " + OVS_BRIDGE + " " + INET + " netmask " + NETMASK + " up")
 	if err != nil {
 		return err
 	}
@@ -74,7 +74,7 @@ func ovsDestroy() {
 }
 
 func ovsSetupNetwork(id string) (string, string, error) {
-	mac, err := GetMacAddress()
+	mac, err := getMacAddress()
 	if err != nil {
 		return "", "", err
 	}
@@ -100,14 +100,14 @@ func ovsUSetupNetwork(id string) {
 }
 
 // we only route at client
-// TODO: only works for one host (local)
+// only works for one host (local)
 // TODO: resubmitting to port 1 always!
 func ovsRoute(cmac, mac, smac string) error {
 	cmd := "sudo ovs-ofctl add-flow " + OVS_BRIDGE + " priority=100,ip,dl_src=" + cmac
 	cmd += ",dl_dst=" + smac + ",actions=mod_dl_dst=" + mac + ",resubmit:1"
 	_, err := runsh(cmd)
 	if err != nil {
-		log.Println("[WARN] unable to de-setup route for ", mac, err)
+		log.Println("[WARN] unable to setup route for ", mac, err)
 	}
 
 	return err
@@ -117,6 +117,17 @@ func ovsDeRoute(cmac string) {
 	cmd := "sudo ovs-ofctl del-flows " + OVS_BRIDGE + " dl_src=" + cmac
 	_, err := runsh(cmd)
 	if err != nil {
-		log.Println("[WARN] unable to desetup route for", cmac, err)
+		log.Println("[WARN] unable to de-setup route for", cmac, err)
 	}
+}
+
+// TODO: unique mac?
+func getMacAddress() (string, error) {
+	buf := make([]byte, 3)
+	_, err := rand.Read(buf)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("00:16:3e:%02x:%02x:%02x", buf[0], buf[1], buf[2]), nil
 }

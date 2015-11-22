@@ -16,7 +16,7 @@ type VoipLine struct {
 	database string
 	sockfile string
 	sock     *net.UnixListener
-	state    *State
+	vh       *VoipHandler
 	quit     chan interface{}
 	wg       sync.WaitGroup
 }
@@ -35,7 +35,7 @@ func NewVoipLine(config *goconfig.ConfigFile) (*VoipLine, error) {
 		return nil, err
 	}
 
-	state, err := NewState(config)
+	vh, err := NewVoipHandler(config)
 	if err != nil {
 		sock.Close()
 		return nil, err
@@ -45,22 +45,25 @@ func NewVoipLine(config *goconfig.ConfigFile) (*VoipLine, error) {
 		database: db,
 		sockfile: sockfile,
 		sock:     sock,
-		state:    state,
+		vh:       vh,
 		quit:     make(chan interface{}),
 	}, nil
 }
 
 func (v *VoipLine) Start() {
-	v.state.Init()
-	v.accept()
+	v.vh.Start()
+	go v.accept()
 }
 
 func (v *VoipLine) Stop() {
+	// close the quit channel so that when we close the socket,
+	// error will occur in Accept function of socket and then
+	// the receive on quit will return a value. We will, then,
+	// wait for the accept function to exit and stop the vh handler
 	close(v.quit)
 	v.sock.Close()
-	v.state.Destroy()
 	v.wg.Wait()
-
+	v.vh.Stop()
 	os.Remove(v.sockfile)
 	log.Println("[INFO] exiting voip loop")
 }
@@ -69,8 +72,9 @@ func (v *VoipLine) GetDB() string {
 	return v.database
 }
 
+// handle concurrent calls to this function
 func (v *VoipLine) Update(points models.Points) {
-	v.state.Update(points)
+	v.vh.UpdatePoints(points)
 }
 
 func (v *VoipLine) accept() {
@@ -95,18 +99,18 @@ func (v *VoipLine) accept() {
 	}
 }
 
+// TODO: multiple request per connection
 func (v *VoipLine) handleConn(conn *net.UnixConn) {
 	defer conn.Close()
 	enc := gob.NewEncoder(conn)
 	dec := gob.NewDecoder(conn)
 
-	var cmd Request
-	switch err := dec.Decode(&cmd); err {
+	var req Request
+	switch err := dec.Decode(&req); err {
 	case nil:
-		response := v.state.handleRequest(&cmd)
-		err := enc.Encode(response)
+		err := enc.Encode(v.vh.HandleRequest(&req))
 		if err != nil {
-			log.Println("[WARN] error in sending voip data:", err)
+			log.Println("[WARN] error in sending data:", err)
 		}
 	case io.EOF:
 		log.Println("[INFO] connection with", conn.RemoteAddr(), "closed")

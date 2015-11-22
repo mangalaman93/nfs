@@ -44,19 +44,26 @@ func NewStoppableServer(config *goconfig.ConfigFile, apps map[string]AppLine) (*
 	}, nil
 }
 
+// Start and Stop can be called in parallel
+// therefore we have to ensure that when we return from Start,
+// we have already initialised the server correctly
 func (s *StoppableServer) Start(l *net.TCPListener) {
 	s.wg.Add(1)
-	defer s.wg.Done()
-
 	s.listener = NewStoppableListener(l)
-	http.Serve(s.listener, s)
+
+	go func() {
+		defer s.wg.Done()
+		http.Serve(s.listener, s)
+	}()
 }
 
 func (s *StoppableServer) Stop() {
+	// Stop the listener first and then wait for server to stop
 	s.listener.Stop()
 	s.wg.Wait()
 }
 
+// this function can be called in parallel multiple times
 func (s *StoppableServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r := s.duplicateRequest(req)
 	precision := r.FormValue("precision")
@@ -77,6 +84,7 @@ func (s *StoppableServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	defer body.Close()
 
+	// multiple reader on a map is ok
 	database := r.FormValue("db")
 	app, ok := s.apps[database]
 	if !ok {
@@ -87,6 +95,7 @@ func (s *StoppableServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	data, err := ioutil.ReadAll(body)
 	if err != nil {
+		log.Println("[WARN] unable to read body of the request")
 		writeErr(w, err)
 		return
 	}
@@ -97,6 +106,8 @@ func (s *StoppableServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
+
+		log.Println("[WARN] unexpected error in parsing data points:", err)
 		writeErr(w, err)
 		return
 	}
