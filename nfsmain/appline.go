@@ -8,5 +8,7 @@ type AppLine interface {
 	Start()
 	Stop()
 	GetDB() string
+
+	// should be able to handle concurrent calls
 	Update(points models.Points)
 }

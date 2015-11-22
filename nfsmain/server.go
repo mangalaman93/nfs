@@ -9,48 +9,56 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"sync"
 	"time"
 
 	"github.com/Unknwon/goconfig"
 	"github.com/influxdb/influxdb/models"
 )
 
-type Handler struct {
+type StoppableServer struct {
+	wg       sync.WaitGroup
+	listener *StoppableListener
 	apps     map[string]AppLine
-	dup      bool
 	endpoint string
 }
 
-func NewHandler(config *goconfig.ConfigFile, apps map[string]AppLine) (*Handler, error) {
-	var h *Handler
-	if s, _ := config.GetSection("VOIP.DB"); s == nil {
-		h = &Handler{
-			apps: apps,
-			dup:  false,
-		}
-	} else {
+func NewStoppableServer(config *goconfig.ConfigFile, apps map[string]AppLine) (*StoppableServer, error) {
+	var endpoint string
+	if s, _ := config.GetSection("VOIP.DB"); s != nil {
 		ihost, err := config.GetValue("VOIP.DB", "host")
 		if err != nil {
 			return nil, err
 		}
-
 		iport, err := config.GetValue("VOIP.DB", "port")
 		if err != nil {
 			return nil, err
 		}
 
-		h = &Handler{
-			apps:     apps,
-			dup:      true,
-			endpoint: ihost + ":" + iport,
-		}
+		endpoint = ihost + ":" + iport
 	}
 
-	return h, nil
+	return &StoppableServer{
+		apps:     apps,
+		endpoint: endpoint,
+	}, nil
 }
 
-func (h Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	r := h.duplicateRequest(req)
+func (s *StoppableServer) Start(l *net.TCPListener) {
+	s.wg.Add(1)
+	defer s.wg.Done()
+
+	s.listener = NewStoppableListener(l)
+	http.Serve(s.listener, s)
+}
+
+func (s *StoppableServer) Stop() {
+	s.listener.Stop()
+	s.wg.Wait()
+}
+
+func (s *StoppableServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	r := s.duplicateRequest(req)
 	precision := r.FormValue("precision")
 	if precision == "" {
 		precision = "n"
@@ -70,7 +78,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	defer body.Close()
 
 	database := r.FormValue("db")
-	app, ok := h.apps[database]
+	app, ok := s.apps[database]
 	if !ok {
 		log.Println("[WARN] unregistered database:", database)
 		w.WriteHeader(http.StatusNoContent)
@@ -110,7 +118,11 @@ type nopCloser struct {
 func (nopCloser) Close() error { return nil }
 
 // ref:https://github.com/chrislusf/teeproxy/blob/master/teeproxy.go
-func (h *Handler) duplicateRequest(r *http.Request) *http.Request {
+func (s *StoppableServer) duplicateRequest(r *http.Request) *http.Request {
+	if s.endpoint == "" {
+		return r
+	}
+
 	buf1 := new(bytes.Buffer)
 	buf2 := new(bytes.Buffer)
 	w := io.MultiWriter(buf1, buf2)
@@ -147,7 +159,7 @@ func (h *Handler) duplicateRequest(r *http.Request) *http.Request {
 			}
 		}()
 
-		con, err := net.DialTimeout("tcp", h.endpoint, time.Duration(1*time.Second))
+		con, err := net.DialTimeout("tcp", s.endpoint, time.Duration(1*time.Second))
 		if err != nil {
 			log.Println("[WARN] unable to connect to influxdb database")
 			return
