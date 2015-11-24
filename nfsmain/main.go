@@ -25,7 +25,7 @@ func Start(config *goconfig.ConfigFile) error {
 
 	apps = make(map[string]AppLine)
 	apps[vl.GetDB()] = vl
-	log.Println("[INFO] registered db:", vl.GetDB(), "with VoipLine instance")
+	log.Println("[INFO] registered db", vl.GetDB(), "with VoipLine instance")
 	server, err = NewStoppableServer(config, apps)
 	if err != nil {
 		return err
@@ -37,21 +37,21 @@ func Start(config *goconfig.ConfigFile) error {
 	}
 	tl, _ := l.(*net.TCPListener)
 	log.Println("[INFO] listening for data on", l.Addr())
-
 	server.Start(tl)
-	vl.Start()
-	return nil
+
+	return vl.Start()
 }
 
 func Stop() {
 	// stop the server first so that app methods
 	// are not called after calling Stop()
 	server.Stop()
+	log.Println("[INFO] stopped http server")
 
-	// and not stop apps
+	// and now stop apps
 	for _, app := range apps {
 		app.Stop()
 	}
-
+	log.Println("[INFO] stopped all applications")
 	log.Println("[INFO] exiting control loop")
 }

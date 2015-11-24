@@ -34,7 +34,6 @@ func NewStoppableServer(config *goconfig.ConfigFile, apps map[string]AppLine) (*
 		if err != nil {
 			return nil, err
 		}
-
 		endpoint = ihost + ":" + iport
 	}
 
@@ -53,7 +52,8 @@ func (s *StoppableServer) Start(l *net.TCPListener) {
 
 	go func() {
 		defer s.wg.Done()
-		http.Serve(s.listener, s)
+		err := http.Serve(s.listener, s)
+		log.Println("[INFO] exiting server with error", err)
 	}()
 }
 

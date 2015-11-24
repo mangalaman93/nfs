@@ -5,7 +5,7 @@ import (
 )
 
 type AppLine interface {
-	Start()
+	Start() error
 	Stop()
 	GetDB() string
 

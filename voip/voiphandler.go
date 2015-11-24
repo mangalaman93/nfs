@@ -85,21 +85,28 @@ func NewVoipHandler(config *goconfig.ConfigFile) (*VoipHandler, error) {
 	}, nil
 }
 
-func (vh *VoipHandler) Start() {}
+func (vh *VoipHandler) Start() error {
+	return vh.cmgr.Setup()
+}
 
 func (vh *VoipHandler) Stop() {
 	vh.Lock()
 	defer vh.Unlock()
 
-	for _, node := range vh.mnodes {
-		vh.cmgr.StopCont(node.Node)
+	for _, mcont := range vh.mnodes {
+		vh.cmgr.StopCont(mcont.node)
 	}
 	for _, node := range vh.anodes {
 		vh.cmgr.StopCont(node)
 	}
+
+	vh.cmgr.Destroy()
 }
 
 func (vh *VoipHandler) HandleRequest(req *Request) *Response {
+	vh.Lock()
+	defer vh.Unlock()
+
 	switch req.Code {
 	case ReqStartServer:
 		return vh.addServer(req)
@@ -143,10 +150,10 @@ func (vh *VoipHandler) UpdatePoints(points models.Points) {
 	}
 
 	// run the algorithm
-	for _, cont := range vh.mnodes {
-		shares := cont.Trigger()
+	for _, mcont := range vh.mnodes {
+		shares := mcont.Trigger()
 		if shares != 0 {
-			vh.cmgr.SetShares(cont.Node, shares)
+			vh.cmgr.SetShares(mcont.node, shares)
 		}
 	}
 }

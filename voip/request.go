@@ -109,6 +109,7 @@ func (vh *VoipHandler) stopCont(req *Request) *Response {
 	node, ok := vh.anodes[contid]
 	if ok {
 		vh.cmgr.StopCont(node)
+		delete(vh.anodes, node.id)
 	} else {
 		mnode, ok := vh.mnodes[contid]
 		if ok {
@@ -117,7 +118,7 @@ func (vh *VoipHandler) stopCont(req *Request) *Response {
 		}
 	}
 
-	return nil
+	return &Response{}
 }
 
 func (vh *VoipHandler) route(req *Request) *Response {
@@ -130,24 +131,24 @@ func (vh *VoipHandler) route(req *Request) *Response {
 	}
 
 	cnode, ok1 := vh.anodes[client]
+	rcont, ok2 := vh.mnodes[router]
 	snode, ok3 := vh.anodes[server]
-	rnode, ok2 := vh.mnodes[router]
 	if !ok1 || !ok2 || !ok3 {
 		return &Response{Err: ErrIdNotExists.Error()}
 	}
 
-	err := vh.cmgr.Route(cnode, snode, rnode.Node)
-	return &Response{Err: err.Error()}
+	err := vh.cmgr.Route(cnode, rcont.node, snode)
+	if err != nil {
+		return &Response{Err: err.Error()}
+	} else {
+		return &Response{}
+	}
 }
 
 func (vh *VoipHandler) addMCont(node *Node, shares int64) {
-	vh.Lock()
-	defer vh.Unlock()
 	vh.mnodes[node.id] = NewMContainer(node, vh.step_length, vh.period_length, shares, vh.reference)
 }
 
-func (vh *VoipHandler) delMCont(node *MContainer) {
-	vh.Lock()
-	defer vh.Unlock()
-	delete(vh.mnodes, node.id)
+func (vh *VoipHandler) delMCont(mcont *MContainer) {
+	delete(vh.mnodes, mcont.node.id)
 }

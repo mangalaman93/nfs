@@ -3,7 +3,7 @@ log_file=/home/ubuntu/nfs/nfs.log
 
 [CONTROLLER]
 host=10.0.0.1
-port=8086
+port=8087
 
 [VOIP]
 db=cadvisor
@@ -13,7 +13,7 @@ unix_sock=/home/ubuntu/nfs/voip.sock
 [VOIP.CONTROL]
 step_length=1000
 period_length=10000
-reference=1048576
+reference=20971520
 cpu_table=cpu_usage_total
 rx_table=rx_bytes
 tx_table=tx_bytes

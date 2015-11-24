@@ -12,6 +12,9 @@ import (
 
 type VoipClient struct {
 	sockfile string
+	conn     *net.UnixConn
+	enc      *gob.Encoder
+	dec      *gob.Decoder
 }
 
 func NewVoipClient(cfile string) (*VoipClient, error) {
@@ -19,18 +22,28 @@ func NewVoipClient(cfile string) (*VoipClient, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	sockfile, err := config.GetValue("VOIP", "unix_sock")
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err := net.DialUnix("unix", nil, &net.UnixAddr{sockfile, "unix"})
 	if err != nil {
 		return nil, err
 	}
 
 	return &VoipClient{
 		sockfile: sockfile,
+		conn:     conn,
+		enc:      gob.NewEncoder(conn),
+		dec:      gob.NewDecoder(conn),
 	}, nil
 }
 
 func (v *VoipClient) Close() {
+	v.enc = nil
+	v.dec = nil
+	v.conn.Close()
 }
 
 func (v *VoipClient) AddServer(host string, shares int) (string, error) {
@@ -64,7 +77,7 @@ func (v *VoipClient) AddSnort(host string, shares int) (string, error) {
 	})
 }
 
-func (v *VoipClient) Stop(cont string) {
+func (v *VoipClient) Stop(cont string) error {
 	_, err := v.doRequest(&voip.Request{
 		Code: voip.ReqStopCont,
 		KeyVal: map[string]string{
@@ -72,9 +85,7 @@ func (v *VoipClient) Stop(cont string) {
 		},
 	})
 
-	if err != nil {
-		panic(err)
-	}
+	return err
 }
 
 func (v *VoipClient) Route(client, router, server string) error {
@@ -91,18 +102,16 @@ func (v *VoipClient) Route(client, router, server string) error {
 }
 
 func (v *VoipClient) doRequest(req *voip.Request) (string, error) {
-	conn, err := net.DialUnix("unix", nil, &net.UnixAddr{v.sockfile, "unix"})
+	err := v.enc.Encode(req)
 	if err != nil {
 		return "", err
 	}
-	defer conn.Close()
 
-	enc := gob.NewEncoder(conn)
-	dec := gob.NewDecoder(conn)
-	enc.Encode(req)
 	var resp voip.Response
-	dec.Decode(&resp)
-	if resp.Err != "" {
+	err = v.dec.Decode(&resp)
+	if err != nil {
+		return "", err
+	} else if resp.Err != "" {
 		return "", fmt.Errorf("%s", resp.Err)
 	}
 

@@ -22,18 +22,19 @@ const (
 
 var (
 	ErrHostNotFound = errors.New("Host not found")
+	ErrNoHosts      = errors.New("error while finding host list")
 )
 
 type DockerCManager struct {
 	dockercls map[string]*docker.DockerClient
+	hmap      map[string]string
+	cadvisor  []string
 }
 
 func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
-	undo := true
-
 	hosts := config.GetKeyList("VOIP.TOPO")
 	if hosts == nil {
-		return nil, errors.New("error while finding host list")
+		return nil, ErrNoHosts
 	}
 
 	var iuser, ipass string
@@ -49,7 +50,6 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 			return nil, err
 		}
 	}
-
 	chost, err := config.GetValue("CONTROLLER", "host")
 	if err != nil {
 		return nil, err
@@ -59,9 +59,31 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 		return nil, err
 	}
 
-	err = ovsInit()
+	hmap := make(map[string]string)
+	for _, host := range hosts {
+		address, err := config.GetValue("VOIP.TOPO", host)
+		if err != nil {
+			return nil, err
+		}
+		hmap[host] = address
+	}
+
+	return &DockerCManager{
+		dockercls: make(map[string]*docker.DockerClient),
+		hmap:      hmap,
+		cadvisor: []string{"-storage_driver=influxdb",
+			"-storage_driver_user=" + iuser,
+			"-storage_driver_password=" + ipass,
+			"-storage_driver_host=" + chost + ":" + cport,
+			"-storage_driver_buffer_duration=" + CADVISOR_BUF_DURATION},
+	}, nil
+}
+
+func (d *DockerCManager) Setup() error {
+	undo := true
+	err := ovsInit()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() {
 		if undo {
@@ -69,29 +91,21 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 		}
 	}()
 
-	dockercls := make(map[string]*docker.DockerClient)
-	for _, host := range hosts {
-		address, err := config.GetValue("VOIP.TOPO", host)
-		if err != nil {
-			return nil, err
-		}
+	for host, address := range d.hmap {
 		client, err := docker.NewDockerClient(address, nil)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		dockercls[host] = client
+
+		d.dockercls[host] = client
 		log.Println("[INFO] added host", host)
 
 		id, err := client.CreateContainer(&docker.ContainerConfig{
 			Image: IMG_CADVISOR,
-			Cmd: []string{"-storage_driver=influxdb",
-				"-storage_driver_user=" + iuser,
-				"-storage_driver_password=" + ipass,
-				"-storage_driver_host=" + chost + ":" + cport,
-				"-storage_driver_buffer_duration=" + CADVISOR_BUF_DURATION},
+			Cmd:   d.cadvisor,
 		}, "cadvisor-"+host)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		defer func(contid string, client *docker.DockerClient) {
 			if undo {
@@ -104,7 +118,7 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 			Binds:       []string{"/:/rootfs:ro", "/var/run:/var/run:rw", "/sys:/sys:ro", "/var/lib/docker/:/var/lib/docker:ro"},
 		})
 		if err != nil {
-			return nil, err
+			return err
 		}
 		defer func(contid string, client *docker.DockerClient) {
 			if undo {
@@ -115,9 +129,7 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 	}
 
 	undo = false
-	return &DockerCManager{
-		dockercls: dockercls,
-	}, nil
+	return nil
 }
 
 func (d *DockerCManager) Destroy() {
@@ -126,11 +138,9 @@ func (d *DockerCManager) Destroy() {
 		if err := client.StopContainer(contid, CONT_STOP_TIMEOUT); err != nil {
 			log.Println("[WARN] unable to stop container", contid)
 		} else {
-			log.Println("[INFO] container with id", contid, "stopped")
+			log.Println("[INFO] stopped cadvisor on host", host)
 			client.RemoveContainer(contid, true, true)
 		}
-
-		log.Println("[INFO] stopped cadvisor on host", host)
 	}
 
 	ovsDestroy()
@@ -198,7 +208,7 @@ func (d *DockerCManager) Route(cnode, rnode, snode *Node) error {
 		return err
 	}
 
-	log.Println("[INFO] setup route", cnode.mac, "->", rnode.mac, "->", snode.mac)
+	log.Println("[INFO] setup route", cnode.ip, "->", rnode.ip, "->", snode.ip)
 	return nil
 }
 
@@ -244,23 +254,23 @@ func (d *DockerCManager) runc(host, prefix string, cconf *docker.ContainerConfig
 	if err != nil {
 		return nil, err
 	}
-	log.Println("[INFO] container with id", cid)
 	defer func() {
 		if undo {
 			client.StopContainer(cid, CONT_STOP_TIMEOUT)
 		}
 	}()
+	log.Println("[INFO] started container with id", cid)
 
 	ip, mac, err := ovsSetupNetwork(cid)
 	if err != nil {
 		return nil, err
 	}
-	log.Println("[INFO] setup network for container", cid, "ip:", ip, "mac:", mac)
 	defer func() {
 		if undo {
 			ovsUSetupNetwork(cid)
 		}
 	}()
+	log.Println("[INFO] setup network for container", cid, "ip:", ip, "mac:", mac)
 
 	undo = false
 	return NewNode(cid, ip, mac, host), nil

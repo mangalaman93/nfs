@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -26,34 +26,35 @@ func main() {
 		panic(err)
 	}
 	defer vc.Stop(server)
-	fmt.Println("started server:", server)
+	log.Println("started server:", server)
 
 	snort, err := vc.AddSnort(localhost, 256)
 	if err != nil {
 		panic(err)
 	}
 	defer vc.Stop(snort)
-	fmt.Println("started snort:", snort)
+	log.Println("started snort:", snort)
 
 	client, err := vc.AddClient(localhost, 1024, server)
 	if err != nil {
 		panic(err)
 	}
 	defer vc.Stop(client)
-	fmt.Println("started client:", client)
+	log.Println("started client:", client)
 
 	err = vc.Route(client, snort, server)
 	if err != nil {
 		panic(err)
-	} else {
-		fmt.Println("routes are setup")
 	}
+	log.Println("routes are setup")
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	timeout := time.After(10 * 600 * time.Second)
+	timeout := time.After(60 * time.Minute)
 	select {
 	case <-sigs:
 	case <-timeout:
 	}
+
+	log.Println("begining cleanup!")
 }

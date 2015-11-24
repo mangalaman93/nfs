@@ -15,7 +15,7 @@ const (
 )
 
 type MContainer struct {
-	*Node
+	node *Node
 
 	// data
 	inflow  *TimeData
@@ -39,7 +39,7 @@ func NewMContainer(node *Node, step, wl, shares, ref int64) *MContainer {
 	curtime := time.Now()
 
 	return &MContainer{
-		Node:    node,
+		node:    node,
 		inflow:  NewTimeData(step, wl, curtime),
 		outflow: NewTimeData(step, wl, curtime),
 		cpuload: NewTimeData(step, wl, curtime),

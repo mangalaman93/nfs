@@ -24,7 +24,6 @@ var (
 )
 
 func runsh(cmd string) ([]byte, error) {
-	log.Println("[INFO] running command", cmd)
 	return exec.Command("/bin/sh", "-c", cmd).Output()
 }
 
@@ -42,22 +41,20 @@ func ovsInit() error {
 		return ErrOvsNotFound
 	}
 
-	_, err = runsh("sudo ovs-vsctl br-exists " + OVS_BRIDGE)
-	if err == nil {
-		log.Println("[WARN] ovs bridge alredy exists, skipping")
-		return nil
-	}
-
 	undo := true
-	_, err = runsh("sudo ovs-vsctl add-br " + OVS_BRIDGE)
+	_, err = runsh("sudo ovs-vsctl br-exists " + OVS_BRIDGE)
 	if err != nil {
-		return err
+		_, err = runsh("sudo ovs-vsctl add-br " + OVS_BRIDGE)
+		if err != nil {
+			return err
+		}
 	}
 	defer func() {
 		if undo {
 			ovsDestroy()
 		}
 	}()
+
 	_, err = runsh("sudo ifconfig " + OVS_BRIDGE + " " + INET + " netmask " + NETMASK + " up")
 	if err != nil {
 		return err
