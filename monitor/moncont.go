@@ -176,7 +176,6 @@ type SippCont struct {
 	rtt      *tail.Tail
 	stat     *tail.Tail
 	stopchan chan bool
-	waitchan chan bool
 	wg       sync.WaitGroup
 }
 
@@ -335,7 +334,8 @@ func (c *SippCont) tailUDP(influxchan chan *influxdb.Point, pid int) {
 }
 
 func (c *SippCont) Tail(influxchan chan *influxdb.Point, pid int) {
-	defer close(c.waitchan)
+	c.wg.Add(1)
+	defer c.wg.Done()
 
 	var files []string
 	var err error
@@ -382,16 +382,18 @@ func (c *SippCont) Tail(influxchan chan *influxdb.Point, pid int) {
 	go c.tailUDP(influxchan, pid)
 
 	// wait for stop signal
+	// so that in case StopTail is called even before control of the program reached here, i.e
+	// if c.rtt and c.stat are not initialised, calling Stop() will result in segmentation fault
+	// when the Stop() function is called in StopTail() function (before init of rtt and stat)
 	<-c.stopchan
 	c.rtt.Stop()
 	c.stat.Stop()
-	c.wg.Wait()
-	log.Printf("[INFO] cleaned up for container %s\n", c.id)
 }
 
 func (c *SippCont) StopTail() {
 	close(c.stopchan)
-	<-c.waitchan
+	c.wg.Wait()
+	log.Printf("[INFO] cleaned up for container %s\n", c.id)
 }
 
 func parseAndSend(val string, base int, influxchan chan *influxdb.Point, table, contid string, curtime time.Time) {
@@ -417,11 +419,9 @@ func cleanupConts() {
 	for _, c := range sippvols {
 		c.StopTail()
 	}
-
 	for _, c := range nfcs {
 		c.StopTail()
 	}
-
 	log.Println("[INFO] cleanup done, exiting!")
 }
 
@@ -519,7 +519,6 @@ func dockerListener(docker *dockerclient.Client, dokchan chan *dockerclient.APIE
 					id:       cont.Name[1:],
 					vid:      volume,
 					stopchan: make(chan bool),
-					waitchan: make(chan bool),
 				}
 				sippvols[event.ID] = c
 				go c.Tail(influxchan, cont.State.Pid)
