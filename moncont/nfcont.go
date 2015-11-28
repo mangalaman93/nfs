@@ -49,7 +49,6 @@ func (n *NFCont) tail() {
 
 	// wait for queue to be created
 	netfilter_file := path.Join("/proc/", strconv.Itoa(n.pid), "/net/netfilter/nfnetlink_queue")
-	dev_file := path.Join("/proc/", strconv.Itoa(n.pid), "/net/dev")
 	for {
 		timeout := time.After(FILES_CHECK_INTERVAL * time.Millisecond)
 		select {
@@ -57,11 +56,6 @@ func (n *NFCont) tail() {
 			log.Println("[INFO] no clean up required for containern", n.id)
 			return
 		case <-timeout:
-		}
-
-		if _, err := os.Stat(dev_file); err != nil {
-			log.Printf("[WARN] %s file not found!\n", dev_file)
-			continue
 		}
 		if _, err := os.Stat(netfilter_file); err != nil {
 			log.Printf("[WARN] %s file not found!\n", netfilter_file)
@@ -104,43 +98,6 @@ func (n *NFCont) tail() {
 			log.Println("[WARN] unable to parse", row[6], "err:", err)
 		} else {
 			n.dbclient.Write("snort_user_drops", n.id, map[string]interface{}{"value": ival}, curtime)
-		}
-
-		// dev file
-		out, err = ioutil.ReadFile(dev_file)
-		curtime = time.Now()
-		if err != nil {
-			log.Println("[WARN] unable to read dev file:", err)
-			return
-		}
-		rows := strings.Split(string(out), "\n")
-		if len(rows) < 4 {
-			log.Println("[WARN] incorrect number of lines in dev file for container", n.id)
-			continue
-		}
-		index := 3
-		if strings.Contains(rows[2], "lo") {
-			if strings.Contains(rows[3], "lo") {
-				log.Println("[WARN] unable to find correct network interface for container", n.id)
-				continue
-			}
-		} else {
-			index = 2
-		}
-		row = strings.Fields(rows[index])
-		if len(row) < 17 {
-			log.Println("[WARN] incorrect parsing of dev file, parsed line:", row)
-			continue
-		}
-		if ival, err := strconv.ParseInt(row[2], 10, 64); err != nil {
-			log.Println("[WARN] unable to parse", row[2], "err:", err)
-		} else {
-			n.dbclient.Write("rx_packets", n.id, map[string]interface{}{"value": ival}, curtime)
-		}
-		if ival, err := strconv.ParseInt(row[10], 10, 64); err != nil {
-			log.Println("[WARN] unable to parse", row[10], "err:", err)
-		} else {
-			n.dbclient.Write("tx_packets", n.id, map[string]interface{}{"value": ival}, curtime)
 		}
 	}
 

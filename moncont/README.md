@@ -9,3 +9,4 @@
 
 # TODO
 * moncont consumes large amount of CPU
+* improve/optimize influxdb api
