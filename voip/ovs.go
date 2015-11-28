@@ -104,7 +104,7 @@ func ovsRoute(cmac, mac, smac string) error {
 	cmd += ",dl_dst=" + smac + ",actions=mod_dl_dst=" + mac + ",resubmit:1"
 	_, err := runsh(cmd)
 	if err != nil {
-		log.Println("[WARN] unable to setup route for ", mac, err)
+		log.Println("[WARN] unable to setup route for", mac, err)
 	}
 
 	return err

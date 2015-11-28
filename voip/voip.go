@@ -59,6 +59,7 @@ func (v *VoipLine) Start() error {
 		return err
 	}
 
+	v.wg.Add(1)
 	go v.accept()
 	return nil
 }
@@ -86,7 +87,6 @@ func (v *VoipLine) Update(points models.Points) {
 }
 
 func (v *VoipLine) accept() {
-	v.wg.Add(1)
 	defer v.wg.Done()
 	log.Println("[INFO] listening voip commands on", v.sockfile)
 
@@ -107,12 +107,12 @@ func (v *VoipLine) accept() {
 		}
 
 		log.Println("[INFO] Received request from", conn.RemoteAddr())
+		v.wg.Add(1)
 		go v.handleConn(conn)
 	}
 }
 
 func (v *VoipLine) handleConn(conn *net.UnixConn) {
-	v.wg.Add(1)
 	defer v.wg.Done()
 	defer conn.Close()
 	enc := gob.NewEncoder(conn)
