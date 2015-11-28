@@ -118,12 +118,12 @@ func (d *DBClient) sendPoints() {
 			}
 			pts = append(pts, *point)
 		case <-timeout:
+			timeout = time.After(BUFFER_DUR * time.Millisecond)
 			if len(pts) == 0 {
 				continue
 			}
 			d.sendBatch(pts)
 			pts = pts[:0]
-			timeout = time.After(BUFFER_DUR * time.Millisecond)
 		}
 	}
 }
