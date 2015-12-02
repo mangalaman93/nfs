@@ -123,4 +123,6 @@ func (h *DockerHandler) listen() {
 			}
 		}
 	}
+
+	log.Println("Exiting docker events listener loop!")
 }

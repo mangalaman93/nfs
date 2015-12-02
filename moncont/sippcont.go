@@ -202,7 +202,7 @@ func (s *SippCont) tailUDP() {
 	defer s.wg.Done()
 
 	hex_port := strings.ToUpper(fmt.Sprintf("%x", SIPP_UDP_PORT))
-	udp_file := path.Join("/proc/", strconv.Itoa(s.pid), "/net/udp")
+	udp_file := path.Join(HOST_PROC_PATH, strconv.Itoa(s.pid), "/net/udp")
 	if _, err := os.Stat(udp_file); err != nil {
 		log.Printf("[ERROR] %s file not found!\n", udp_file)
 		panic(err)

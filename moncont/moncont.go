@@ -64,6 +64,7 @@ func main() {
 	log.SetFlags(log.LstdFlags)
 	log.Println("#################### BEGIN OF LOG ##########################")
 
+	InitConfig()
 	dbclient, err := NewDBClient(flag.Args())
 	if err != nil {
 		log.Println("[ERROR] unable to create influxdb client", err)

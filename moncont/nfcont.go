@@ -48,8 +48,8 @@ func (n *NFCont) tail() {
 	defer n.wg.Done()
 
 	// wait for queue to be created
-	netfilter_file := path.Join("/proc/", strconv.Itoa(n.pid), "/net/netfilter/nfnetlink_queue")
-	dev_file := path.Join("/proc/", strconv.Itoa(n.pid), "/net/dev")
+	netfilter_file := path.Join(HOST_PROC_PATH, strconv.Itoa(n.pid), "/net/netfilter/nfnetlink_queue")
+	dev_file := path.Join(HOST_PROC_PATH, strconv.Itoa(n.pid), "/net/dev")
 	for {
 		timeout := time.After(FILES_CHECK_INTERVAL * time.Millisecond)
 		select {
