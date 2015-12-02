@@ -11,13 +11,14 @@ import (
 )
 
 const (
-	IMG_SIPP              = "mangalaman93/sipp"
-	IMG_SNORT             = "mangalaman93/snort"
-	IMG_CADVISOR          = "mangalaman93/cadvisor"
-	SIPP_BUFF_SIZE        = "1048576"
-	DEFAULT_CPU_PERIOD    = 100000
-	CONT_STOP_TIMEOUT     = 5
-	CADVISOR_BUF_DURATION = "5s"
+	IMG_SIPP       = "mangalaman93/sipp"
+	IMG_SNORT      = "mangalaman93/snort"
+	IMG_CADVISOR   = "mangalaman93/cadvisor"
+	IMG_MONCONT    = "mangalaman93/moncont"
+	SIPP_BUFF_SIZE = "1048576"
+	CPU_PERIOD     = 100000
+	STOP_TIMEOUT   = 5
+	BUF_DURATION   = "5s"
 )
 
 var (
@@ -29,6 +30,7 @@ type DockerCManager struct {
 	dockercls map[string]*docker.DockerClient
 	hmap      map[string]string
 	cadvisor  []string
+	moncont   []string
 }
 
 func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
@@ -75,7 +77,8 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 			"-storage_driver_user=" + iuser,
 			"-storage_driver_password=" + ipass,
 			"-storage_driver_host=" + chost + ":" + cport,
-			"-storage_driver_buffer_duration=" + CADVISOR_BUF_DURATION},
+			"-storage_driver_buffer_duration=" + BUF_DURATION},
+		moncont: []string{chost + ":" + cport},
 	}, nil
 }
 
@@ -115,17 +118,46 @@ func (d *DockerCManager) Setup() error {
 
 		err = client.StartContainer(id, &docker.HostConfig{
 			NetworkMode: "host",
-			Binds:       []string{"/:/rootfs:ro", "/var/run:/var/run:rw", "/sys:/sys:ro", "/var/lib/docker/:/var/lib/docker:ro"},
+			Binds: []string{"/:/rootfs:ro", "/var/run:/var/run:rw",
+				"/sys:/sys:ro", "/var/lib/docker/:/var/lib/docker:ro"},
 		})
 		if err != nil {
 			return err
 		}
 		defer func(contid string, client *docker.DockerClient) {
 			if undo {
-				client.StopContainer(contid, CONT_STOP_TIMEOUT)
+				client.StopContainer(contid, STOP_TIMEOUT)
 			}
 		}(id, client)
 		log.Println("[INFO] running cadvisor on host", host)
+
+		id, err = client.CreateContainer(&docker.ContainerConfig{
+			Image: IMG_MONCONT,
+			Cmd:   d.moncont,
+		}, "moncont-"+host)
+		if err != nil {
+			return err
+		}
+		defer func(contid string, client *docker.DockerClient) {
+			if undo {
+				client.RemoveContainer(contid, true, true)
+			}
+		}(id, client)
+
+		err = client.StartContainer(id, &docker.HostConfig{
+			NetworkMode: "host",
+			Binds: []string{"/proc:/host/proc:ro", "/var/run:/var/run:ro",
+				"/var/lib/docker/:/var/lib/docker:ro"},
+		})
+		if err != nil {
+			return err
+		}
+		defer func(contid string, client *docker.DockerClient) {
+			if undo {
+				client.StopContainer(contid, STOP_TIMEOUT)
+			}
+		}(id, client)
+		log.Println("[INFO] running moncont on host", host)
 	}
 
 	undo = false
@@ -135,10 +167,18 @@ func (d *DockerCManager) Setup() error {
 func (d *DockerCManager) Destroy() {
 	for host, client := range d.dockercls {
 		contid := "cadvisor-" + host
-		if err := client.StopContainer(contid, CONT_STOP_TIMEOUT); err != nil {
+		if err := client.StopContainer(contid, STOP_TIMEOUT); err != nil {
 			log.Println("[WARN] unable to stop container", contid)
 		} else {
 			log.Println("[INFO] stopped cadvisor on host", host)
+			client.RemoveContainer(contid, true, true)
+		}
+
+		contid = "moncont-" + host
+		if err := client.StopContainer(contid, STOP_TIMEOUT); err != nil {
+			log.Println("[WARN] unable to stop container", contid)
+		} else {
+			log.Println("[INFO] stopped moncont on host", host)
 			client.RemoveContainer(contid, true, true)
 		}
 	}
@@ -153,7 +193,7 @@ func (d *DockerCManager) StartServer(host string, shares int64) (*Node, error) {
 		NetworkDisabled: true,
 	}, &docker.HostConfig{
 		CpuShares: shares,
-		CpuQuota:  int64(shares * DEFAULT_CPU_PERIOD / 1024),
+		CpuQuota:  int64(shares * CPU_PERIOD / 1024),
 	})
 }
 
@@ -164,7 +204,7 @@ func (d *DockerCManager) StartSnort(host string, shares int64) (*Node, error) {
 	}, &docker.HostConfig{
 		CapAdd:    []string{"NET_ADMIN"},
 		CpuShares: shares,
-		CpuQuota:  int64(shares * DEFAULT_CPU_PERIOD / 1024),
+		CpuQuota:  int64(shares * CPU_PERIOD / 1024),
 	})
 }
 
@@ -176,7 +216,7 @@ func (d *DockerCManager) StartClient(host string, shares int64, serverip string)
 		NetworkDisabled: true,
 	}, &docker.HostConfig{
 		CpuShares: shares,
-		CpuQuota:  int64(shares * DEFAULT_CPU_PERIOD / 1024),
+		CpuQuota:  int64(shares * CPU_PERIOD / 1024),
 	})
 }
 
@@ -190,7 +230,7 @@ func (d *DockerCManager) StopCont(node *Node) error {
 	ovsDeRoute(node.mac)
 	log.Println("[INFO] derouted for container", node.id)
 
-	err := client.StopContainer(node.id, CONT_STOP_TIMEOUT)
+	err := client.StopContainer(node.id, STOP_TIMEOUT)
 	if err != nil {
 		log.Println("[WARN] unable to stop container", node.id)
 	} else {
@@ -221,7 +261,7 @@ func (d *DockerCManager) SetShares(node *Node, shares int64) error {
 
 	if err := client.SetContainer(node.id, &docker.HostConfig{
 		CpuShares: shares,
-		CpuQuota:  int64(shares * DEFAULT_CPU_PERIOD / 1024),
+		CpuQuota:  int64(shares * CPU_PERIOD / 1024),
 	}); err != nil {
 		log.Println("[WARN] unable to set new shares")
 		return err
@@ -256,7 +296,7 @@ func (d *DockerCManager) runc(host, prefix string, cconf *docker.ContainerConfig
 	}
 	defer func() {
 		if undo {
-			client.StopContainer(cid, CONT_STOP_TIMEOUT)
+			client.StopContainer(cid, STOP_TIMEOUT)
 		}
 	}()
 	log.Println("[INFO] started container with id", cid)
