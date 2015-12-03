@@ -134,15 +134,15 @@ func (n *NFCont) tail(docker *dockerclient.Client) {
 			log.Println("[WARN] incorrect parsing of dev file, parsed line:", row)
 			continue
 		}
-		if ival, err := strconv.ParseInt(row[2], 10, 64); err != nil {
+		if fval, err := strconv.ParseFloat(row[2], 64); err != nil {
 			log.Println("[WARN] unable to parse", row[2], "err:", err)
 		} else {
-			n.dbclient.Write("rx_packets", n.id, map[string]interface{}{"value": ival}, curtime)
+			n.dbclient.Write("rx_packets", n.id, map[string]interface{}{"value": fval}, curtime)
 		}
-		if ival, err := strconv.ParseInt(row[10], 10, 64); err != nil {
+		if fval, err := strconv.ParseFloat(row[10], 64); err != nil {
 			log.Println("[WARN] unable to parse", row[10], "err:", err)
 		} else {
-			n.dbclient.Write("tx_packets", n.id, map[string]interface{}{"value": ival}, curtime)
+			n.dbclient.Write("tx_packets", n.id, map[string]interface{}{"value": fval}, curtime)
 		}
 
 		// available shares
