@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	dockerclient "github.com/fsouza/go-dockerclient"
 )
 
 type NFCont struct {
@@ -33,9 +35,9 @@ func (n *NFCont) String() string {
 	return fmt.Sprintf("{id:%s, pid:%s}", n.id, n.pid)
 }
 
-func (n *NFCont) Tail() {
+func (n *NFCont) Tail(docker *dockerclient.Client) {
 	n.wg.Add(1)
-	go n.tail()
+	go n.tail(docker)
 }
 
 func (n *NFCont) StopTail() {
@@ -44,7 +46,7 @@ func (n *NFCont) StopTail() {
 	log.Println("[INFO] cleaned up for container", n.id)
 }
 
-func (n *NFCont) tail() {
+func (n *NFCont) tail(docker *dockerclient.Client) {
 	defer n.wg.Done()
 
 	// wait for queue to be created
@@ -142,6 +144,14 @@ func (n *NFCont) tail() {
 		} else {
 			n.dbclient.Write("tx_packets", n.id, map[string]interface{}{"value": ival}, curtime)
 		}
+
+		// available shares
+		cont, err := docker.InspectContainer(n.id)
+		if err != nil {
+			log.Println("[WARN] unable to inspect container", n.id)
+			continue
+		}
+		n.dbclient.Write("available_shares", n.id, map[string]interface{}{"value": cont.HostConfig.CPUShares}, time.Now())
 	}
 
 	log.Println("[INFO] exiting Tail for container", n.id)

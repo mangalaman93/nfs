@@ -107,7 +107,7 @@ func (h *DockerHandler) listen() {
 			}
 			nfcont := NewNFCont(cont.Name[1:], cont.State.Pid, h.dbclient)
 			h.nfconts[event.ID] = nfcont
-			nfcont.Tail()
+			nfcont.Tail(h.docker)
 			log.Println("[INFO] monitoring container", event.ID)
 		case event.Status == "die" || event.Status == "kill" || event.Status == "stop":
 			if scont, ok := h.sippvols[event.ID]; ok {
