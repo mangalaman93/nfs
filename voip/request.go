@@ -2,6 +2,7 @@ package voip
 
 import (
 	"errors"
+	"net"
 	"strconv"
 )
 
@@ -16,6 +17,7 @@ const (
 	ReqStartClient
 	ReqStopCont
 	ReqRouteCont
+	ReqSetRate
 )
 
 type Request struct {
@@ -145,10 +147,52 @@ func (vh *VoipHandler) route(req *Request) *Response {
 	}
 }
 
+func (vh *VoipHandler) setRate(req *Request) *Response {
+	kv := req.KeyVal
+	client, ok1 := kv["client"]
+	rate, ok2 := kv["rate"]
+	if !(ok1 && ok2) {
+		return &Response{Err: ErrKeyNotFound.Error()}
+	}
+
+	cnode, ok1 := vh.anodes[client]
+	if !ok1 {
+		return &Response{Err: ErrIdNotExists.Error()}
+	}
+	irate, err := strconv.ParseInt(rate, 10, 32)
+	if err != nil {
+		return &Response{Err: err.Error()}
+	}
+
+	err = vh.setClientRate(cnode, int(irate))
+	if err != nil {
+		return &Response{Err: err.Error()}
+	} else {
+		return &Response{}
+	}
+}
+
 func (vh *VoipHandler) addMCont(node *Node, shares int64) {
 	vh.mnodes[node.id] = NewMContainer(node, vh.step_length, vh.period_length, shares, vh.reference)
 }
 
 func (vh *VoipHandler) delMCont(mcont *MContainer) {
 	delete(vh.mnodes, mcont.node.id)
+}
+
+func (vh *VoipHandler) setClientRate(cnode *Node, rate int) error {
+	addr, err := net.ResolveUDPAddr("udp", cnode.ip+":8888")
+	if err != nil {
+		return err
+	}
+	conn, err := net.DialUDP("udp", nil, addr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	_, err = conn.Write([]byte("cset rate " + strconv.Itoa(rate)))
+	if err != nil {
+		return err
+	}
+	return nil
 }

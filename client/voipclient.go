@@ -101,6 +101,18 @@ func (v *VoipClient) Route(client, router, server string) error {
 	return err
 }
 
+func (v *VoipClient) SetRate(client string, rate int) error {
+	_, err := v.doRequest(&voip.Request{
+		Code: voip.ReqSetRate,
+		KeyVal: map[string]string{
+			"client": client,
+			"rate":   strconv.Itoa(rate),
+		},
+	})
+
+	return err
+}
+
 func (v *VoipClient) doRequest(req *voip.Request) (string, error) {
 	err := v.enc.Encode(req)
 	if err != nil {

@@ -12,10 +12,11 @@ import (
 
 const (
 	localhost = "local"
+	cpath     = "/home/ubuntu/nfs/.voip.conf"
 )
 
 func main() {
-	vc, err := client.NewVoipClient("/home/ubuntu/nfs/.voip.conf")
+	vc, err := client.NewVoipClient(cpath)
 	if err != nil {
 		panic(err)
 	}
@@ -28,7 +29,7 @@ func main() {
 	defer func() { log.Println("stopping server, err:", vc.Stop(server)) }()
 	log.Println("started server:", server)
 
-	snort, err := vc.AddSnort(localhost, 256)
+	snort, err := vc.AddSnort(localhost, 1024)
 	if err != nil {
 		panic(err)
 	}
@@ -50,10 +51,22 @@ func main() {
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	timeout := time.After(60 * time.Minute)
-	select {
-	case <-sigs:
-	case <-timeout:
+	flag := false
+	for rate := 500; rate < 5000; rate += 500 {
+		vc.SetRate(client, rate)
+		log.Println("set rate to", rate)
+
+		timeout := time.After(60 * time.Second)
+		select {
+		case <-sigs:
+			flag = true
+			break
+		case <-timeout:
+		}
+
+		if flag {
+			break
+		}
 	}
 
 	log.Println("begining cleanup!")

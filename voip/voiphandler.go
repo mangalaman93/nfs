@@ -118,6 +118,8 @@ func (vh *VoipHandler) HandleRequest(req *Request) *Response {
 		return vh.stopCont(req)
 	case ReqRouteCont:
 		return vh.route(req)
+	case ReqSetRate:
+		return vh.setRate(req)
 	default:
 		return &Response{Err: ErrUnknownReq.Error()}
 	}
