@@ -115,7 +115,9 @@ func (vh *VoipHandler) stopCont(req *Request) *Response {
 	} else {
 		mnode, ok := vh.mnodes[contid]
 		if ok {
+			vh.cmgr.StopCont(mnode.node)
 			vh.delMCont(mnode)
+		} else {
 			return &Response{Err: ErrIdNotExists.Error()}
 		}
 	}
