@@ -12,6 +12,7 @@ const (
 	RX_TABLE = iota
 	TX_TABLE
 	CPU_TABLE
+	QUEUE_TABLE
 )
 
 type MContainer struct {
@@ -21,21 +22,24 @@ type MContainer struct {
 	inflow  *TimeData
 	outflow *TimeData
 	cpuload *TimeData
+	queue   *TimeData
 
 	// control vars
 	shares int64
 	ref    int64
+	alpha  float64
 
 	// algorithm vars
 	ploadr  float64
 	prxr    float64
 	ptxr    float64
+	pqueuel int64
 	ibytes  int64
 	tibytes int64
 	csum    float64
 }
 
-func NewMContainer(node *Node, step, wl, shares, ref int64) *MContainer {
+func NewMContainer(node *Node, step, wl, shares, ref int64, alpha float64) *MContainer {
 	curtime := time.Now()
 
 	return &MContainer{
@@ -43,8 +47,10 @@ func NewMContainer(node *Node, step, wl, shares, ref int64) *MContainer {
 		inflow:  NewTimeData(step, wl, curtime),
 		outflow: NewTimeData(step, wl, curtime),
 		cpuload: NewTimeData(step, wl, curtime),
+		queue:   NewTimeData(step, wl, curtime),
 		shares:  shares,
 		ref:     ref,
+		alpha:   alpha,
 	}
 }
 
@@ -63,6 +69,8 @@ func (m *MContainer) AddPoint(table int, point models.Point) {
 		m.outflow.AddPoint(point.Time(), val)
 	case CPU_TABLE:
 		m.cpuload.AddPoint(point.Time(), val)
+	case QUEUE_TABLE:
+		m.queue.AddPoint(point.Time(), val)
 	default:
 		panic("NOT REACHABLE")
 	}
@@ -75,8 +83,9 @@ func (m *MContainer) Trigger() int64 {
 		_, rxr, ok1 := m.inflow.Next()
 		tx, txr, ok2 := m.outflow.Next()
 		_, cpr, ok3 := m.cpuload.Next()
+		lqueue, _, ok4 := m.queue.Next()
 		cpr /= 10000000
-		if !ok1 || !ok2 || !ok3 {
+		if !ok1 || !ok2 || !ok3 || !ok4 {
 			break
 		}
 
@@ -86,16 +95,15 @@ func (m *MContainer) Trigger() int64 {
 		}
 
 		// we have three points rx, tx, cp synchronized within <step>
-		ninetyp := float64(m.shares) * 90 / 1024
-
+		// ninetyp := float64(m.shares) * 90 / 1024
 		switch {
-		case m.ploadr > ninetyp && cpr < ninetyp:
+		case m.pqueuel > 0 && lqueue <= 0:
 			m.csum += float64(tx-m.tibytes) * (m.prxr / (m.prxr + m.ptxr))
 			m.tibytes = tx
-		case m.ploadr < ninetyp && cpr > ninetyp:
+		case m.pqueuel <= 0 && lqueue > 0:
 			m.tibytes = tx
-		case m.ploadr > ninetyp && cpr > ninetyp:
-		case m.ploadr < ninetyp && cpr < ninetyp:
+		case m.pqueuel > 0 && lqueue > 0:
+		case m.pqueuel <= 0 && lqueue <= 0:
 		}
 
 		// 1 interval is over, we look at only inflow for consistency
@@ -103,10 +111,10 @@ func (m *MContainer) Trigger() int64 {
 		if duration > 0 {
 			m.csum += float64(tx-m.tibytes) * (m.prxr / (m.prxr - m.ptxr))
 			dprime := float64(m.csum) / float64(m.shares) / duration
-			if math.Abs(dprime) > 0 {
+			if math.Abs(dprime) > 0 && math.Abs(dprime) < 1000000 {
 				delta := float64(tx-m.ibytes) / duration
 				log.Println("m.sum:", m.csum, "dprime:", dprime, "delta", delta)
-				m.shares += int64(0.1 * (float64(m.ref) - delta) / dprime)
+				m.shares += int64(m.alpha * (float64(m.ref) - delta) / dprime)
 				if m.shares < 0 {
 					m.shares = 64
 				} else if m.shares > 1024 {
@@ -123,6 +131,7 @@ func (m *MContainer) Trigger() int64 {
 		m.ploadr = cpr
 		m.prxr = rxr
 		m.ptxr = txr
+		m.pqueuel = lqueue
 	}
 
 	if flag {

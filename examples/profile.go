@@ -51,6 +51,7 @@ func main() {
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	time.Sleep(10 * time.Second)
 	flag := false
 	for rate := 500; rate < 5000; rate += 500 {
 		vc.SetRate(client, rate)

@@ -175,7 +175,7 @@ func (vh *VoipHandler) setRate(req *Request) *Response {
 }
 
 func (vh *VoipHandler) addMCont(node *Node, shares int64) {
-	vh.mnodes[node.id] = NewMContainer(node, vh.step_length, vh.period_length, shares, vh.reference)
+	vh.mnodes[node.id] = NewMContainer(node, vh.step_length, vh.period_length, shares, vh.reference, vh.alpha)
 }
 
 func (vh *VoipHandler) delMCont(mcont *MContainer) {

@@ -13,10 +13,12 @@ unix_sock=/home/ubuntu/nfs/voip.sock
 [VOIP.CONTROL]
 step_length=1000
 period_length=10000
-reference=20971520
+reference=5000
+alpha = 1
 cpu_table=cpu_usage_total
-rx_table=rx_bytes
-tx_table=tx_bytes
+rx_table=rx_packets
+tx_table=tx_packets
+queue_table=snort_queue_length
 
 [VOIP.MANAGER]
 type=docker

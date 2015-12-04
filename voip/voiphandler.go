@@ -26,9 +26,11 @@ type VoipHandler struct {
 	step_length   int64
 	period_length int64
 	reference     int64
+	alpha         float64
 	cpu_table     string
 	rx_table      string
 	tx_table      string
+	queue_table   string
 }
 
 func NewVoipHandler(config *goconfig.ConfigFile) (*VoipHandler, error) {
@@ -44,6 +46,10 @@ func NewVoipHandler(config *goconfig.ConfigFile) (*VoipHandler, error) {
 	if err != nil {
 		return nil, err
 	}
+	alpha, err := config.Float64("VOIP.CONTROL", "alpha")
+	if err != nil {
+		return nil, err
+	}
 	cpu_table, err := config.GetValue("VOIP.CONTROL", "cpu_table")
 	if err != nil {
 		return nil, err
@@ -53,6 +59,10 @@ func NewVoipHandler(config *goconfig.ConfigFile) (*VoipHandler, error) {
 		return nil, err
 	}
 	tx_table, err := config.GetValue("VOIP.CONTROL", "tx_table")
+	if err != nil {
+		return nil, err
+	}
+	queue_table, err := config.GetValue("VOIP.CONTROL", "queue_table")
 	if err != nil {
 		return nil, err
 	}
@@ -79,9 +89,11 @@ func NewVoipHandler(config *goconfig.ConfigFile) (*VoipHandler, error) {
 		step_length:   step_length,
 		period_length: period_length,
 		reference:     reference,
+		alpha:         alpha,
 		cpu_table:     cpu_table,
 		rx_table:      rx_table,
 		tx_table:      tx_table,
+		queue_table:   queue_table,
 	}, nil
 }
 
@@ -147,6 +159,8 @@ func (vh *VoipHandler) UpdatePoints(points models.Points) {
 			cont.AddPoint(RX_TABLE, point)
 		case vh.tx_table:
 			cont.AddPoint(TX_TABLE, point)
+		case vh.queue_table:
+			cont.AddPoint(QUEUE_TABLE, point)
 		default:
 		}
 	}
