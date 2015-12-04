@@ -28,7 +28,7 @@ func main() {
 	defer func() { log.Println("stopping server, err:", vc.Stop(server)) }()
 	log.Println("started server:", server)
 
-	snort, err := vc.AddSnort(localhost, 256)
+	snort, err := vc.AddSnort(localhost, 64)
 	if err != nil {
 		panic(err)
 	}
@@ -47,6 +47,10 @@ func main() {
 		panic(err)
 	}
 	log.Println("routes are setup")
+
+	time.Sleep(10 * time.Second)
+	vc.SetRate(client, 3000)
+	log.Println("set rate to", 3000)
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)

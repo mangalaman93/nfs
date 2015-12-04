@@ -32,7 +32,7 @@ type MContainer struct {
 	ptxr    float64
 	ibytes  int64
 	tibytes int64
-	csum    int64
+	csum    float64
 }
 
 func NewMContainer(node *Node, step, wl, shares, ref int64) *MContainer {
@@ -69,6 +69,8 @@ func (m *MContainer) AddPoint(table int, point models.Point) {
 }
 
 func (m *MContainer) Trigger() int64 {
+	flag := false
+
 	for {
 		_, rxr, ok1 := m.inflow.Next()
 		tx, txr, ok2 := m.outflow.Next()
@@ -87,26 +89,35 @@ func (m *MContainer) Trigger() int64 {
 		ninetyp := float64(m.shares) * 90 / 1024
 
 		switch {
-		case m.ploadr > ninetyp && m.ploadr < ninetyp:
-			m.csum += (tx - m.tibytes) * int64(m.prxr/(m.prxr+m.ptxr))
+		case m.ploadr > ninetyp && cpr < ninetyp:
+			m.csum += float64(tx-m.tibytes) * (m.prxr / (m.prxr + m.ptxr))
 			m.tibytes = tx
-		case m.ploadr < ninetyp && m.ploadr > ninetyp:
+		case m.ploadr < ninetyp && cpr > ninetyp:
 			m.tibytes = tx
-		case m.ploadr > ninetyp && m.ploadr > ninetyp:
+		case m.ploadr > ninetyp && cpr > ninetyp:
 		case m.ploadr < ninetyp && cpr < ninetyp:
 		}
 
 		// 1 interval is over, we look at only inflow for consistency
 		duration := float64(m.inflow.AfterD())
 		if duration > 0 {
+			m.csum += float64(tx-m.tibytes) * (m.prxr / (m.prxr - m.ptxr))
 			dprime := float64(m.csum) / float64(m.shares) / duration
-			if math.Abs(dprime) > 0.01 {
+			if math.Abs(dprime) > 0 {
 				delta := float64(tx-m.ibytes) / duration
-				m.shares -= int64((float64(m.ref) - delta) / dprime)
+				log.Println("m.sum:", m.csum, "dprime:", dprime, "delta", delta)
+				m.shares += int64(0.1 * (float64(m.ref) - delta) / dprime)
+				if m.shares < 0 {
+					m.shares = 64
+				} else if m.shares > 1024 {
+					m.shares = 1024
+				}
+				flag = true
 			}
 
 			m.csum = 0
 			m.ibytes = tx
+			m.tibytes = tx
 		}
 
 		m.ploadr = cpr
@@ -114,5 +125,9 @@ func (m *MContainer) Trigger() int64 {
 		m.ptxr = txr
 	}
 
-	return m.shares
+	if flag {
+		return m.shares
+	} else {
+		return 0
+	}
 }
