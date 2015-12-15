@@ -107,7 +107,7 @@ func (m *MContainer) Trigger() int64 {
 		}
 
 		// 1 interval is over, we look at only inflow for consistency
-		duration := float64(m.inflow.AfterD())
+		duration := float64(m.inflow.AfterD()) / 1000
 		if duration > 0 {
 			m.csum += float64(tx-m.tibytes) * (m.prxr / (m.prxr - m.ptxr))
 			dprime := float64(m.csum) / float64(m.shares) / duration
