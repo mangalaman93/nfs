@@ -183,6 +183,7 @@ func (vh *VoipHandler) delMCont(mcont *MContainer) {
 }
 
 func (vh *VoipHandler) setClientRate(cnode *Node, rate int) error {
+	runsh("sudo iptables -F")
 	addr, err := net.ResolveUDPAddr("udp", cnode.ip+":8888")
 	if err != nil {
 		return err

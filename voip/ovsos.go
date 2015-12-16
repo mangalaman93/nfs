@@ -8,6 +8,7 @@ const (
 	OVSBR_OS = "br-int"
 )
 
+// TODO: only works for localhost
 func ovsosRoute(host_ip, cmac, mac, smac string) error {
 	cmd := "sudo ovs-ofctl add-flow " + OVSBR_OS + " priority=100,ip,dl_src="
 	cmd += cmac + ",dl_dst=" + smac + ",actions=mod_dl_dst=" + mac + ",resubmit:1"
