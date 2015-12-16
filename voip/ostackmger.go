@@ -3,24 +3,28 @@ package voip
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/Unknwon/goconfig"
 	docker "github.com/mangalaman93/dockerclient"
-	"github.com/satori/go.uuid"
+	"github.com/rackspace/gophercloud"
+	"github.com/rackspace/gophercloud/openstack"
+	"github.com/rackspace/gophercloud/openstack/compute/v2/servers"
 )
 
 const (
-	STOP_TIMEOUT = 5
+	WAIT_FOR_START = 10
 )
 
-type DockerCManager struct {
+type OStackCManager struct {
+	osclient  *gophercloud.ServiceClient
 	dockercls map[string]*docker.DockerClient
 	hmap      map[string]string
 	cadvisor  []string
 	moncont   []string
 }
 
-func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
+func NewOStackCManager(config *goconfig.ConfigFile) (*OStackCManager, error) {
 	hosts := config.GetKeyList("VOIP.TOPO")
 	if hosts == nil {
 		return nil, ErrNoHosts
@@ -57,7 +61,21 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 		hmap[host] = address
 	}
 
-	return &DockerCManager{
+	opts, err := openstack.AuthOptionsFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	provider, err := openstack.AuthenticatedClient(opts)
+	if err != nil {
+		return nil, err
+	}
+	osclient, err := openstack.NewComputeV2(provider, gophercloud.EndpointOpts{Region: "RegionOne"})
+	if err != nil {
+		return nil, err
+	}
+
+	return &OStackCManager{
+		osclient:  osclient,
 		dockercls: make(map[string]*docker.DockerClient),
 		hmap:      hmap,
 		cadvisor: []string{"-storage_driver=influxdb",
@@ -69,30 +87,26 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 	}, nil
 }
 
-func (d *DockerCManager) Setup() error {
+func (o *OStackCManager) Setup() error {
 	undo := true
-	err := ovsdInit()
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if undo {
-			ovsdDestroy()
-		}
-	}()
 
-	for host, address := range d.hmap {
+	for host, address := range o.hmap {
+		tokens := strings.Split(address, ":")
+		if len(tokens) < 2 {
+			return fmt.Errorf("Unexpected host address")
+		}
 		client, err := docker.NewDockerClient(address, nil)
 		if err != nil {
 			return err
 		}
+		o.hmap[host] = tokens[0]
 
-		d.dockercls[host] = client
+		o.dockercls[host] = client
 		log.Println("[INFO] added host", host)
 
 		id, err := client.CreateContainer(&docker.ContainerConfig{
 			Image: IMG_CADVISOR,
-			Cmd:   d.cadvisor,
+			Cmd:   o.cadvisor,
 		}, "cadvisor-"+host)
 		if err != nil {
 			return err
@@ -120,7 +134,7 @@ func (d *DockerCManager) Setup() error {
 
 		id, err = client.CreateContainer(&docker.ContainerConfig{
 			Image: IMG_MONCONT,
-			Cmd:   d.moncont,
+			Cmd:   o.moncont,
 		}, "moncont-"+host)
 		if err != nil {
 			return err
@@ -151,8 +165,8 @@ func (d *DockerCManager) Setup() error {
 	return nil
 }
 
-func (d *DockerCManager) Destroy() {
-	for host, client := range d.dockercls {
+func (o *OStackCManager) Destroy() {
+	for host, client := range o.dockercls {
 		contid := "cadvisor-" + host
 		if err := client.StopContainer(contid, STOP_TIMEOUT); err != nil {
 			log.Println("[WARN] unable to stop container", contid)
@@ -169,68 +183,64 @@ func (d *DockerCManager) Destroy() {
 			client.RemoveContainer(contid, true, true)
 		}
 	}
-
-	ovsdDestroy()
 }
 
-func (d *DockerCManager) StartServer(host string, shares int64) (*Node, error) {
-	return d.runc(host, "sipp-server", &docker.ContainerConfig{
-		Env:             []string{"ARGS=-buff_size " + SIPP_BUFF_SIZE + " -sn uas"},
-		Image:           IMG_SIPP,
-		NetworkDisabled: true,
-	}, &docker.HostConfig{
-		CpuShares: shares,
-		CpuQuota:  int64(shares * CPU_PERIOD / 1024),
+func (o *OStackCManager) StartServer(host string, shares int64) (*Node, error) {
+	return o.runc(host, "sipp-server", shares, servers.CreateOpts{
+		Name:             "sipp-server",
+		FlavorName:       "c1.tiny",
+		ImageName:        IMG_SIPP,
+		Metadata:         map[string]string{"ARGS": "-buff_size " + SIPP_BUFF_SIZE + " -sn uas"},
+		AvailabilityZone: "regionOne:" + host,
 	})
 }
 
-func (d *DockerCManager) StartSnort(host string, shares int64) (*Node, error) {
-	return d.runc(host, "snort", &docker.ContainerConfig{
-		Image:           IMG_SNORT,
-		NetworkDisabled: true,
-	}, &docker.HostConfig{
-		CapAdd:    []string{"NET_ADMIN"},
-		CpuShares: shares,
-		CpuQuota:  int64(shares * CPU_PERIOD / 1024),
+func (o *OStackCManager) StartSnort(host string, shares int64) (*Node, error) {
+	return o.runc(host, "snort", shares, servers.CreateOpts{
+		Name:             "snort",
+		FlavorName:       "c1.tiny",
+		ImageName:        IMG_SNORT,
+		Metadata:         map[string]string{"OPT_CAP_ADD": "NET_ADMIN"},
+		AvailabilityZone: "regionOne:" + host,
 	})
 }
 
-func (d *DockerCManager) StartClient(host string, shares int64, serverip string) (*Node, error) {
+func (o *OStackCManager) StartClient(host string, shares int64, serverip string) (*Node, error) {
 	args := "-buff_size " + SIPP_BUFF_SIZE + " -sn uac -r 0 " + serverip + ":5060"
-	return d.runc(host, "sipp-client", &docker.ContainerConfig{
-		Env:             []string{"ARGS=" + args},
-		Image:           IMG_SIPP,
-		NetworkDisabled: true,
-	}, &docker.HostConfig{
-		CpuShares: shares,
-		CpuQuota:  int64(shares * CPU_PERIOD / 1024),
+	return o.runc(host, "sipp-client", shares, servers.CreateOpts{
+		Name:             "sipp-client",
+		FlavorName:       "c1.tiny",
+		ImageName:        IMG_SIPP,
+		Metadata:         map[string]string{"ARGS": args},
+		AvailabilityZone: "regionOne:" + host,
 	})
 }
 
-func (d *DockerCManager) StopCont(node *Node) error {
-	client, ok := d.dockercls[node.host]
+func (o *OStackCManager) StopCont(node *Node) error {
+	address, ok := o.hmap[node.host]
 	if !ok {
-		log.Println("[WARN] client doesn't exist for host", node.host)
+		log.Println("[WARN] address for host:", node.host, "not found")
 		return ErrHostNotFound
 	}
-
-	ovsdDeRoute(node.mac)
+	ovsosDeRoute(address, node.mac)
 	log.Println("[INFO] derouted for container", node.id)
 
-	err := client.StopContainer(node.id, STOP_TIMEOUT)
+	err := servers.Delete(o.osclient, node.id).ExtractErr()
 	if err != nil {
 		log.Println("[WARN] unable to stop container", node.id)
 	} else {
 		log.Println("[INFO] container with id", node.id, "stopped")
-		ovsdUSetupNetwork(node.id)
-		err = client.RemoveContainer(node.id, true, true)
 	}
-
 	return err
 }
 
-func (d *DockerCManager) Route(cnode, rnode, snode *Node) error {
-	err := ovsdRoute(cnode.mac, rnode.mac, snode.mac)
+func (o *OStackCManager) Route(cnode, rnode, snode *Node) error {
+	address, ok := o.hmap[cnode.host]
+	if !ok {
+		log.Println("[WARN] address for host:", cnode.host, "not found")
+		return ErrHostNotFound
+	}
+	err := ovsosRoute(address, cnode.mac, rnode.mac, snode.mac)
 	if err != nil {
 		return err
 	}
@@ -239,14 +249,14 @@ func (d *DockerCManager) Route(cnode, rnode, snode *Node) error {
 	return nil
 }
 
-func (d *DockerCManager) SetShares(node *Node, shares int64) error {
-	client, ok := d.dockercls[node.host]
+func (o *OStackCManager) SetShares(node *Node, shares int64) error {
+	client, ok := o.dockercls[node.host]
 	if !ok {
 		log.Println("[WARN] docker client for host", node.host, "not found")
 		return ErrHostNotFound
 	}
 
-	if err := client.SetContainer(node.id, &docker.HostConfig{
+	if err := client.SetContainer(node.other, &docker.HostConfig{
 		CpuShares: shares,
 		CpuQuota:  int64(shares * CPU_PERIOD / 1024),
 	}); err != nil {
@@ -254,51 +264,42 @@ func (d *DockerCManager) SetShares(node *Node, shares int64) error {
 		return err
 	}
 
-	log.Println("[INFO] set cpu limit for container", node.id, "to", shares)
+	log.Println("[INFO] set cpu limit for container", node.other, "to", shares)
 	return nil
 }
 
-func (d *DockerCManager) runc(host, prefix string, cconf *docker.ContainerConfig, hconf *docker.HostConfig) (*Node, error) {
+func (o *OStackCManager) runc(host, prefix string, shares int64, opts servers.CreateOpts) (*Node, error) {
 	undo := true
-	client, ok := d.dockercls[host]
-	if !ok {
-		return nil, ErrHostNotFound
-	}
-
-	cid := fmt.Sprintf("%s-%s", prefix, uuid.NewV1())
-	_, err := client.CreateContainer(cconf, cid)
+	cont, err := servers.Create(o.osclient, opts).Extract()
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
 		if undo {
-			client.RemoveContainer(cid, true, true)
+			servers.Delete(o.osclient, cont.ID)
 		}
 	}()
-	log.Println("[INFO] created container with id", cid)
-
-	err = client.StartContainer(cid, hconf)
+	err = servers.WaitForStatus(o.osclient, cont.ID, "ACTIVE", WAIT_FOR_START)
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		if undo {
-			client.StopContainer(cid, STOP_TIMEOUT)
-		}
-	}()
-	log.Println("[INFO] started container with id", cid)
+	log.Println("[INFO] started container with id", cont.ID)
 
-	ip, mac, err := ovsdSetupNetwork(cid)
+	// TODO (temporary solution)
+	out, err := runsh("nova --os-username admin --os-tenant-name admin --os-password ubuntu --os-auth-url http://10.1.21.14:5000/v2.0 interface-list " + cont.ID)
+	tokens := strings.Split(string(out), "|")
+	if len(tokens) < 12 {
+		return nil, fmt.Errorf("Mac address not found!")
+	}
+
+	ip := strings.TrimSpace(strings.Split(tokens[10], ",")[0])
+	node := NewNode(cont.ID, ip, strings.TrimSpace(tokens[11]), host)
+	node.other = prefix + "-" + cont.ID
+	err = o.SetShares(node, shares)
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		if undo {
-			ovsdUSetupNetwork(cid)
-		}
-	}()
-	log.Println("[INFO] setup network for container", cid, "ip:", ip, "mac:", mac)
 
 	undo = false
-	return NewNode(cid, ip, mac, host), nil
+	return node, nil
 }

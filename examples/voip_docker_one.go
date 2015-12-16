@@ -11,11 +11,11 @@ import (
 )
 
 const (
-	localhost = "local"
+	localhost = "jedi054"
 )
 
 func main() {
-	vc, err := client.NewVoipClient("/home/ubuntu/nfs/.voip.conf")
+	vc, err := client.NewVoipClient("/opt/stack/nfs/.voip.conf")
 	if err != nil {
 		panic(err)
 	}

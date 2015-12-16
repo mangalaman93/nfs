@@ -1,10 +1,11 @@
 package voip
 
 type Node struct {
-	id   string
-	ip   string
-	mac  string
-	host string
+	id    string
+	ip    string
+	mac   string
+	host  string
+	other string
 }
 
 func NewNode(id, ip, mac, host string) *Node {

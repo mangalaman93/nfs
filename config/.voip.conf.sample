@@ -1,5 +1,5 @@
 [DEFAULT]
-log_file=/home/ubuntu/nfs/nfs.log
+log_file=/opt/stack/nfs/nfs.log
 
 [CONTROLLER]
 host=10.0.0.1
@@ -7,7 +7,7 @@ port=8087
 
 [VOIP]
 db=cadvisor
-unix_sock=/home/ubuntu/nfs/voip.sock
+unix_sock=/opt/stack/nfs/voip.sock
 
 ; we collect data every 1000ms
 [VOIP.CONTROL]
@@ -21,6 +21,7 @@ tx_table=tx_packets
 queue_table=snort_queue_length
 
 [VOIP.MANAGER]
+; ostack/docker
 type=docker
 
 [VOIP.TOPO]

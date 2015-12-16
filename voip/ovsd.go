@@ -27,7 +27,7 @@ func runsh(cmd string) ([]byte, error) {
 	return exec.Command("/bin/sh", "-c", cmd).Output()
 }
 
-func ovsInit() error {
+func ovsdInit() error {
 	out, err := runsh("which ovs-vsctl")
 	if err != nil || string(out) == "" {
 		return ErrOvsNotFound
@@ -51,7 +51,7 @@ func ovsInit() error {
 	}
 	defer func() {
 		if undo {
-			ovsDestroy()
+			ovsdDestroy()
 		}
 	}()
 
@@ -65,12 +65,12 @@ func ovsInit() error {
 	return nil
 }
 
-func ovsDestroy() {
+func ovsdDestroy() {
 	runsh("sudo ovs-vsctl del-br " + OVS_BRIDGE)
 	log.Println("[INFO] deleted ovs bridge")
 }
 
-func ovsSetupNetwork(id string) (string, string, error) {
+func ovsdSetupNetwork(id string) (string, string, error) {
 	mac, err := getMacAddress()
 	if err != nil {
 		return "", "", err
@@ -87,7 +87,7 @@ func ovsSetupNetwork(id string) (string, string, error) {
 	return ip, mac, err
 }
 
-func ovsUSetupNetwork(id string) {
+func ovsdUSetupNetwork(id string) {
 	_, err := runsh("sudo ovs-docker del-port " + OVS_BRIDGE + " eth0 " + id)
 	if err != nil {
 		log.Println("[INFO] unable to remove interface from container", id, err)
@@ -99,7 +99,7 @@ func ovsUSetupNetwork(id string) {
 // we only route at client
 // only works for one host (local)
 // TODO: resubmitting to port 1 always!
-func ovsRoute(cmac, mac, smac string) error {
+func ovsdRoute(cmac, mac, smac string) error {
 	cmd := "sudo ovs-ofctl add-flow " + OVS_BRIDGE + " priority=100,ip,dl_src=" + cmac
 	cmd += ",dl_dst=" + smac + ",actions=mod_dl_dst=" + mac + ",resubmit:1"
 	_, err := runsh(cmd)
@@ -110,7 +110,7 @@ func ovsRoute(cmac, mac, smac string) error {
 	return err
 }
 
-func ovsDeRoute(cmac string) {
+func ovsdDeRoute(cmac string) {
 	cmd := "sudo ovs-ofctl del-flows " + OVS_BRIDGE + " dl_src=" + cmac
 	_, err := runsh(cmd)
 	if err != nil {

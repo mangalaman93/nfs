@@ -75,6 +75,8 @@ func NewVoipHandler(config *goconfig.ConfigFile) (*VoipHandler, error) {
 	switch mtype {
 	case "docker":
 		cmgr, err = NewDockerCManager(config)
+	case "ostack":
+		cmgr, err = NewOStackCManager(config)
 	default:
 		err = ErrUnknownManager
 	}

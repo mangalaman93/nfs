@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	localhost = "local"
-	cpath     = "/home/ubuntu/nfs/.voip.conf"
+	localhost = "jedi054"
+	cpath     = "/opt/stack/nfs/.voip.conf"
 )
 
 func main() {
