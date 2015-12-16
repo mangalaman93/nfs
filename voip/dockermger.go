@@ -47,6 +47,10 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 	if err != nil {
 		return nil, err
 	}
+	database, err := config.GetValue("VOIP", "db")
+	if err != nil {
+		return nil, err
+	}
 
 	hmap := make(map[string]string)
 	for _, host := range hosts {
@@ -64,6 +68,7 @@ func NewDockerCManager(config *goconfig.ConfigFile) (*DockerCManager, error) {
 			"-storage_driver_user=" + iuser,
 			"-storage_driver_password=" + ipass,
 			"-storage_driver_host=" + chost + ":" + cport,
+			"-storage_driver_db=" + database,
 			"-storage_driver_buffer_duration=" + BUF_DURATION},
 		moncont: []string{chost + ":" + cport},
 	}, nil

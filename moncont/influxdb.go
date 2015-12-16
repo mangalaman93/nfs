@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	DB          = "cadvisor"
+	DB          = "nfs"
 	BUFFER_DUR  = 5000
 	BUFFER_SIZE = 1000
 )
